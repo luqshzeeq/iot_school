@@ -1,0 +1,83 @@
+html, body {
+	height: 100%;
+}
+
+body.my-login-page {
+	background-color: #f7f9fb;
+	font-size: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.my-login-page .card-wrapper {
+	width: 400px;
+}
+
+.my-login-page .logo-img {
+    max-height: 120px;  /* Medium size logo */
+    width: auto;  /* Maintains aspect ratio */
+    margin-bottom: 15px;
+}
+
+.my-login-page .project-title {
+	font-size: 24px;
+	font-weight: 600;
+	color: #0072ff;
+	margin-top: 10px;
+}
+
+.my-login-page .subtitle {
+	font-size: 14px;
+	color: #666;
+	margin-bottom: 20px;
+}
+
+.my-login-page .card {
+	border-color: transparent;
+	box-shadow: 0 4px 8px rgba(0,0,0,.05);
+}
+
+.my-login-page .card.fat {
+	padding: 15px;
+}
+
+.my-login-page .form-control {
+	border-width: 2px;
+}
+
+.my-login-page .form-group label {
+	width: 100%;
+	font-weight: 500;
+}
+
+.my-login-page .btn.btn-block {
+	padding: 12px;
+}
+
+.my-login-page .footer {
+	color: #888;
+	text-align: center;
+	font-size: 13px;
+	padding-top: 20px;
+}
+
+.forgot-password-link {
+    font-size: 14px;
+    color: #0072ff;
+    display: block;
+    text-align: center;
+    margin-top: 10px;  /* Add space between password and link */
+}
+
+.forgot-password-link:hover {
+    text-decoration: underline;
+}
+
+
+@media screen and (max-width: 425px) {
+	.my-login-page .card-wrapper {
+		width: 90%;
+		margin: 0 auto;
+	}
+}
