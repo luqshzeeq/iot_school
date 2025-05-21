@@ -2,18 +2,15 @@
 include 'db_connection.php';
 session_start();
 
-// Handle form submission
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = mysqli_real_escape_string($conn, $_POST['username']);
     $email    = mysqli_real_escape_string($conn, $_POST['email']);
     $password = mysqli_real_escape_string($conn, $_POST['password']);
     $confirm  = mysqli_real_escape_string($conn, $_POST['confirm']);
 
-    // Validate password confirmation
     if ($password !== $confirm) {
         $error = "Passwords do not match.";
     } else {
-        // Check if username or email already exists
         $check = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
         $check->bind_param("ss", $username, $email);
         $check->execute();
@@ -22,12 +19,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if ($check->num_rows > 0) {
             $error = "Username or email already registered.";
         } else {
-            // Hash the password
-            $hashed_password = password_hash($password, PASSWORD_DEFAULT);
-
-            // Insert the new teacher with role = 'teacher'
+            // No password hashing used here
             $stmt = $conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'teacher')");
-            $stmt->bind_param("sss", $username, $email, $hashed_password);
+            $stmt->bind_param("sss", $username, $email, $password);
 
             if ($stmt->execute()) {
                 header("Location: index.php?register=success");
@@ -43,6 +37,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $conn->close();
 }
 ?>
+
 
 
 <!DOCTYPE html>

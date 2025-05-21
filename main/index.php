@@ -1,79 +1,64 @@
 <?php
-session_start();  // Start the session for user login
+session_start();
 
-// If the user is already logged in, redirect to the correct dashboard
 if (isset($_SESSION['user_id'])) {
     if ($_SESSION['role'] == 'teacher') {
-        header("Location: teacher_dashboard.php"); // Redirect to teacher dashboard
+        header("Location: teacher_dashboard.php");
         exit();
     } elseif ($_SESSION['role'] == 'admin') {
-        header("Location: admin_dashboard.php"); // Redirect to admin dashboard
+        header("Location: admin_dashboard.php");
         exit();
     }
 }
 
-include 'db_connection.php';  // Include database connection
+include 'db_connection.php';
+$error = null;
 
-$error = null;  // Initialize error variable
-
-// Handle form submission for login
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($_POST['username']) || empty($_POST['password'])) {
-        // If username or password is empty, show an error
         $error = "Please enter both username and password.";
     } else {
-        $username = trim($_POST['username']);  // Remove extra spaces
-        $password_attempt = $_POST['password'];  // The password entered by the user
+        $username = trim($_POST['username']);
+        $password_attempt = $_POST['password'];
 
-        // Query to check if user exists in the database
         $stmt = $conn->prepare("SELECT id, username, password, role FROM users WHERE username = ?");
         if ($stmt) {
             $stmt->bind_param("s", $username);
             $stmt->execute();
             $result = $stmt->get_result();
 
-            // Check if user is found
             if ($result->num_rows == 1) {
                 $user = $result->fetch_assoc();
 
-                // Verify the password (use password_verify for hashed passwords, plain-text will fail)
-                if ($password_attempt == $user['password']) {  // Change this line if using hashed passwords
-                    // Password is correct, set session variables
+                // Direct password comparison (no hashing)
+                if ($password_attempt === $user['password']) {
                     $_SESSION['user_id'] = $user['id'];
                     $_SESSION['username'] = $user['username'];
-                    $_SESSION['role'] = $user['role'];  // Store user role
-
-                    // Regenerate session ID for security (prevents session fixation)
+                    $_SESSION['role'] = $user['role'];
                     session_regenerate_id(true);
 
-                    // Debugging: Check session variables
-                    // var_dump($_SESSION);  // Remove this after debugging
-
-                    // Redirect based on the user's role
                     if ($user['role'] == 'teacher') {
-                        header("Location: teacher_dashboard.php");  // Redirect to teacher dashboard
+                        header("Location: teacher_dashboard.php");
                         exit();
                     } elseif ($user['role'] == 'admin') {
-                        header("Location: admin_dashboard.php");  // Redirect to admin dashboard
+                        header("Location: admin_dashboard.php");
                         exit();
                     }
                 } else {
-                    // Incorrect password
                     $error = "Invalid username or password.";
                 }
             } else {
-                // Username not found
-                $error = "Invalid username or password."; // Keep this error generic
+                $error = "Invalid username or password.";
             }
-            $stmt->close();  // Close the prepared statement
+            $stmt->close();
         } else {
-            // Error preparing the SQL statement
             $error = "Login system error. Please try again later.";
         }
-        $conn->close();  // Close the connection
+        $conn->close();
     }
 }
 ?>
+
 
 <!DOCTYPE html>
 <html lang="en">
@@ -90,41 +75,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <div class="container h-100">
             <div class="row justify-content-md-center align-items-center h-100">
                 <div class="card-wrapper">
-
-                    <!-- Centered Logo and Title -->
                     <div class="text-center mb-2">
                         <img src="img/unimap-logo.png" alt="UniMAP Logo" class="img-fluid logo-img">
                         <h4 class="project-title">Language Monitoring System</h4>
                         <p class="subtitle">Developed by Group 30, UniMAP</p>
                     </div>
 
-                    <!-- Login Card -->
                     <div class="card fat">
                         <div class="card-body">
                             <h4 class="card-title">Login</h4>
 
-                            <!-- Display error message if there's an error -->
                             <?php if (isset($error)): ?>
-                                <div class="alert alert-danger">
-                                    <?php echo htmlspecialchars($error); // Sanitize error output ?>
-                                </div>
+                                <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
                             <?php endif; ?>
 
-                            <form method="POST" action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" class="my-login-validation" novalidate="">
+                            <form method="POST" class="my-login-validation" novalidate>
                                 <div class="form-group">
                                     <label for="username">Username</label>
-                                    <input id="username" type="text" class="form-control" name="username" value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>" required autofocus>
-                                    <div class="invalid-feedback">
-                                        Username is required
-                                    </div>
+                                    <input id="username" type="text" class="form-control" name="username"
+                                           value="<?php echo isset($_POST['username']) ? htmlspecialchars($_POST['username']) : ''; ?>"
+                                           required autofocus>
+                                    <div class="invalid-feedback">Username is required</div>
                                 </div>
 
                                 <div class="form-group">
                                     <label for="password">Password</label>
-                                    <input id="password" type="password" class="form-control" name="password" required data-eye>
-                                    <div class="invalid-feedback">
-                                        Password is required
-                                    </div>
+                                    <input id="password" type="password" class="form-control" name="password" required>
+                                    <div class="invalid-feedback">Password is required</div>
                                 </div>
 
                                 <div class="form-group">
