@@ -1,9 +1,8 @@
 <?php
 // sidebar.php
-
 $current_page = basename($_SERVER['PHP_SELF']);
-
 $menu_items = [
+    'admin_overview.php'        => ['label' => 'Dashboard', 'icon' => 'fa-tachometer-alt'], // <-- ADD THIS LINE
     'admin_dashboard.php'       => ['label' => 'Manage Languages', 'icon' => 'fa-language'],
     'admin_manage_users.php'    => ['label' => 'Manage Users', 'icon' => 'fa-users-cog'],
     'admin_monitor_devices.php' => ['label' => 'Monitor Devices', 'icon' => 'fa-desktop'],
