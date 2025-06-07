@@ -1,12 +1,13 @@
 <?php
 session_start();
 date_default_timezone_set('Asia/Kuala_Lumpur');
-include 'db_connection.php'; // Your DB connection file with $conn
+include 'db_connection.php';
 
 $message = null;
 $error = null;
 $show_form = true;
 $success = false;
+$user_id_for_log = null;
 
 // Get token from GET or POST
 $token = $_GET['token'] ?? $_POST['token'] ?? '';
@@ -14,25 +15,43 @@ if (empty($token)) {
     die('Invalid or missing token.');
 }
 
-// Verify token is valid and not expired
-$stmt = $conn->prepare("SELECT email, expires_at FROM password_resets WHERE token = ? AND expires_at > NOW()");
-if (!$stmt) {
+// Verify token
+$stmt_token_verify = $conn->prepare("SELECT email, expires_at FROM password_resets WHERE token = ? AND expires_at > NOW()");
+if (!$stmt_token_verify) {
     die("Database query preparation error: " . $conn->error);
 }
-$stmt->bind_param("s", $token);
-$stmt->execute();
-$result = $stmt->get_result();
+$stmt_token_verify->bind_param("s", $token);
+$stmt_token_verify->execute();
+$result_token_verify = $stmt_token_verify->get_result();
 
-if ($result->num_rows === 0) {
-    $stmt->close();
+if ($result_token_verify->num_rows === 0) {
+    $stmt_token_verify->close();
     die("Invalid or expired token. Please request a new password reset link.");
 }
-$row = $result->fetch_assoc();
-$email = $row['email'];
-$stmt->close();
+$row_token = $result_token_verify->fetch_assoc();
+$email = $row_token['email'];
+$stmt_token_verify->close();
+
+// Get user_id for logging
+$stmt_get_user = $conn->prepare("SELECT id FROM users WHERE email = ?");
+if ($stmt_get_user) {
+    $stmt_get_user->bind_param("s", $email);
+    $stmt_get_user->execute();
+    $result_user = $stmt_get_user->get_result();
+    if ($result_user->num_rows === 1) {
+        $user_row = $result_user->fetch_assoc();
+        $user_id_for_log = $user_row['id'];
+    }
+    $stmt_get_user->close();
+}
 
 // Handle form submission
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
+    $posted_token = $_POST['token'] ?? '';
+    if(empty($posted_token) || $posted_token !== $token) {
+        die("Token mismatch or missing from submission.");
+    }
+    
     $password = $_POST['password'] ?? '';
     $confirm_password = $_POST['confirm_password'] ?? '';
 
@@ -43,13 +62,24 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     } elseif (strlen($password) < 8) {
         $error = "Password must be at least 8 characters.";
     } else {
-        // Store password as plain text (NOT RECOMMENDED)
         $stmt_update = $conn->prepare("UPDATE users SET password=? WHERE email=?");
         if (!$stmt_update) {
             $error = "Database query preparation error for update: " . $conn->error;
         } else {
             $stmt_update->bind_param("ss", $password, $email);
             if ($stmt_update->execute()) {
+                // Log the reset
+                if ($user_id_for_log) {
+                    $reset_method_log = 'user_initiated_via_link';
+                    $ip_address_log = $_SERVER['REMOTE_ADDR'] ?? null;
+                    $stmt_log = $conn->prepare("INSERT INTO password_reset_logs (user_id, reset_method, admin_id_who_reset, ip_address, reset_at) VALUES (?, ?, NULL, ?, NOW())");
+                    if ($stmt_log) {
+                        $stmt_log->bind_param("iss", $user_id_for_log, $reset_method_log, $ip_address_log);
+                        $stmt_log->execute();
+                        $stmt_log->close();
+                    }
+                }
+                
                 // Delete token
                 $stmt_delete = $conn->prepare("DELETE FROM password_resets WHERE token=?");
                 if ($stmt_delete) {
@@ -57,6 +87,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                     $stmt_delete->execute();
                     $stmt_delete->close();
                 }
+                
                 $show_form = false;
                 $success = true;
             } else {
@@ -69,114 +100,137 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 ?>
 
 <!DOCTYPE html>
-<html lang="en" dir="ltr">
+<html lang="en">
 <head>
-
     <meta charset="UTF-8">
-    <meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=0'>
-    <meta content="DayOne - Multipurpose Admin & Dashboard Template" name="description">
-    <meta content="Spruko Technologies Private Limited" name="author">
-    <meta name="keywords" content="admin dashboard, admin panel template, html admin template, dashboard html template, bootstrap 4 dashboard, template admin bootstrap 4, simple admin panel template, simple dashboard html template, bootstrap admin panel, task dashboard, job dashboard, bootstrap admin panel, dashboards html, panel in html, bootstrap 4 dashboard"/>
-
-    <title>Reset Password</title>
-
-    <link rel="icon" href="../../assets/images/brand/unimapicon.png" type="image/x-icon"/>
-
-    <link href="../../assets/plugins/bootstrap/css/bootstrap.css" rel="stylesheet" />
-    <link href="../../assets/css/style.css" rel="stylesheet" />
-    <link href="../../assets/css/dark.css" rel="stylesheet" />
-    <link href="../../assets/css/skin-modes.css" rel="stylesheet" />
-    <link href="../../assets/css/animated.css" rel="stylesheet" />
-    <link href="../../assets/css/icons.css" rel="stylesheet" />
-    <link href="../../assets/plugins/select2/select2.min.css" rel="stylesheet" />
-    <link href="../../assets/plugins/p-scrollbar/p-scrollbar.css" rel="stylesheet" />
-
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password - UMMAP</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="../../assets/plugins/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        .bg-image {
+            background: url('../../assets/images/brand/resetbg2.png') no-repeat center center;
+            background-size: cover;
+        }
+        .form-container {
+            max-width: 500px;
+            width: 100%;
+        }
+        .logo {
+            max-height: 80px;
+            width: auto;
+        }
+    </style>
+    
     <!-- SweetAlert2 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet" />
-
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
 </head>
-
-<body>
-
-    <div class="page relative error-page3">
-        <div class="row no-gutters">
-            <div class="col-md-6 h-100vh">
-                <div class="cover-image h-100vh" style="background-image: url('/img/resetbg2.png'); background-size: cover; background-position: center;">
-                    <div class="container">
-                        <div class="customlogin-imgcontent">
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-6 bg-white h-100vh">
-                <div class="container">
-                    <div class="customlogin-content">
-                        <div class="pt-4 pb-2">
-                            <a class="header-brand" href="index.php">
-                                <img src="../../assets/images/brand/unimaplogo.png" class="header-brand-img custom-logo" alt="Unimaplogo" style="max-width: 150px; height: auto;">
-                            </a>
-                        </div>
-                        <div class="p-4 pt-6">
-                            <h1 class="mb-2">Reset Password</h1>
-                            <p class="text-muted">Enter your new password below</p>
-                        </div>
-
-                        <?php if ($error): ?>
-                            <div class="alert alert-danger"><?= htmlspecialchars($error) ?></div>
-                        <?php endif; ?>
-
+<body class="bg-light">
+    <div class="container-fluid h-100 p-0">
+        <div class="row g-0 h-100">
+            <!-- Background Image Column (hidden on small screens) -->
+            <div class="col-lg-6 d-none d-lg-block bg-image h-100"></div>
+            
+            <!-- Form Column -->
+            <div class="col-lg-6 d-flex align-items-center justify-content-center p-4">
+                <div class="form-container">
+                    <div class="text-center mb-4">
+                        <img src="../../assets/images/brand/unimaplogo2.png" class="logo mb-4" alt="UMMAP Logo">
+                        <h2 class="mb-3">Reset Password</h2>
                         <?php if ($show_form): ?>
-                            <form class="card-body pt-3" id="reset" name="reset" method="post" action="" autocomplete="off">
-                                <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
-                                <div class="form-group">
-                                    <label class="form-label" for="password">New Password</label>
-                                    <input class="form-control" id="password" name="password" type="password" placeholder="New password" required>
-                                    <small class="form-text text-muted">At least 8 characters</small>
-                                </div>
-                                <div class="form-group">
-                                    <label class="form-label" for="confirm_password">Confirm Password</label>
-                                    <input class="form-control" id="confirm_password" name="confirm_password" type="password" placeholder="Confirm new password" required>
-                                </div>
-                                <div class="submit">
-                                    <button class="btn btn-primary btn-block" type="submit">Reset Password</button>
-                                </div>
-                            </form>
+                            <p class="text-muted">Enter your new password below</p>
                         <?php endif; ?>
+                    </div>
 
-                        <div class="text-center mt-4">
-                            <p class="text-dark mb-0">Remembered your password? <a class="text-primary ml-1" href="index.php">Login</a></p>
-                        </div>
+                    <?php if ($error && $show_form): ?>
+                        <div class="alert alert-danger text-center"><?= htmlspecialchars($error) ?></div>
+                    <?php endif; ?>
+
+                    <?php if ($show_form): ?>
+                        <form class="needs-validation" method="post" action="<?= htmlspecialchars($_SERVER["PHP_SELF"]); ?>?token=<?= htmlspecialchars($token) ?>" novalidate>
+                            <input type="hidden" name="token" value="<?= htmlspecialchars($token) ?>">
+                            
+                            <div class="mb-3">
+                                <label for="password" class="form-label">New Password</label>
+                                <input type="password" class="form-control form-control-lg" id="password" name="password" required>
+                                <div class="form-text">At least 8 characters</div>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <label for="confirm_password" class="form-label">Confirm Password</label>
+                                <input type="password" class="form-control form-control-lg" id="confirm_password" name="confirm_password" required>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary btn-lg w-100 py-2" id="submitBtn">
+                                Reset Password
+                            </button>
+                        </form>
+                    <?php endif; ?>
+
+                    <div class="text-center mt-4">
+                        <p class="mb-0">Remembered your password? <a href="index.php">Login</a></p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- jQuery, Bootstrap JS -->
     <script src="../../assets/plugins/jquery/jquery.min.js"></script>
-    <script src="../../assets/plugins/bootstrap/popper.min.js"></script>
-    <script src="../../assets/plugins/bootstrap/js/bootstrap.min.js"></script>
-    <script src="../../assets/plugins/select2/select2.full.min.js"></script>
-    <script src="../../assets/plugins/p-scrollbar/p-scrollbar.js"></script>
-    <script src="../../assets/js/custom.js"></script>
-
+    <script src="../../assets/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
+    
     <!-- SweetAlert2 JS -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Form submission handling
+        const form = document.querySelector('form.needs-validation');
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const submitBtn = form.querySelector('#submitBtn');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Processing...';
+                }
+            });
+        }
+    });
 
     <?php if ($success): ?>
-    <script>
-        Swal.fire({
-            icon: 'success',
-            title: 'Password Reset!',
-            text: 'Your password has been successfully reset.',
-            confirmButtonText: 'Go to Login',
-            allowOutsideClick: false
-        }).then((result) => {
-            if (result.isConfirmed) {
-                window.location.href = "index.php";
-            }
-        });
-    </script>
+    Swal.fire({
+        icon: 'success',
+        title: 'Password Reset!',
+        text: 'Your password has been successfully reset.',
+        confirmButtonText: 'Go to Login',
+        allowOutsideClick: false,
+        allowEscapeKey: false
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = "index.php";
+        }
+    });
+    <?php elseif ($error && !$show_form): ?>
+    Swal.fire({
+        icon: 'error',
+        title: 'Error Occurred',
+        text: '<?= addslashes(htmlspecialchars($error)) ?>',
+        confirmButtonText: 'Try Again',
+        allowOutsideClick: false
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = "forgot_password.php";
+        }
+    });
     <?php endif; ?>
-
+    </script>
 </body>
 </html>
