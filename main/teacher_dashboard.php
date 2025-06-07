@@ -410,6 +410,17 @@ $chart_labels_json = json_encode($chart_labels);
             gap: 0.5rem; /* Tailwind's gap-2 */
         }
         /* The specific .calendar-day.current-day styles are moved to dashboard_content.php */
+
+
+        /* Rotate animation for the sidebar toggle icon */
+#sidebarToggleBottom i {
+    transition: transform 0.3s ease-in-out; /* Add transition for smooth rotation */
+}
+
+.sidebar.collapsed #sidebarToggleBottom i {
+    transform: rotate(360deg); /* Rotate the icon when the sidebar is collapsed */
+}
+
     </style>
 </head>
 <body class="flex h-screen overflow-hidden">
@@ -561,6 +572,11 @@ $chart_labels_json = json_encode($chart_labels);
                         </div>
                     </div>
                     <script>
+
+
+
+
+
                         // JavaScript for profile edit functionality
                         document.addEventListener('DOMContentLoaded', () => {
                             const editBtn = document.getElementById('editProfileButton');
