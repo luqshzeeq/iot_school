@@ -1,6 +1,7 @@
 <?php
 session_start();
 
+// Redirect if user is already logged in (important for initial load)
 if (isset($_SESSION['user_id'])) {
     if ($_SESSION['role'] == 'teacher') {
         header("Location: teacher_dashboard.php");
@@ -13,6 +14,7 @@ if (isset($_SESSION['user_id'])) {
 
 include 'db_connection.php'; // Ensure this file exists and handles database connection
 $error = null;
+$redirect_to_dashboard = null; // Will store 'admin' or 'teacher' for JS
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($_POST['user_identifier']) || empty($_POST['password'])) {
@@ -26,6 +28,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if (strlen($password_attempt) < 8) {
             $error = "Password must be at least 8 characters long.";
         } else {
+            // Prepare statement to prevent SQL injection
             $stmt = $conn->prepare("SELECT id, username, email, password, role FROM users WHERE username = ? OR email = ?");
             if ($stmt) {
                 $stmt->bind_param("ss", $user_identifier, $user_identifier);
@@ -36,23 +39,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $user = $result->fetch_assoc();
 
                     // Plaintext password check (temporary - REPLACE WITH HASHING IN PRODUCTION)
+                    // You MUST replace this with password_verify($password_attempt, $user['password'])
                     if ($password_attempt === $user['password']) {
                         $_SESSION['user_id'] = $user['id'];
                         $_SESSION['username'] = $user['username'];
                         $_SESSION['role'] = $user['role'];
                         session_regenerate_id(true); // Regenerate session ID for security
 
+                        // --- MODIFICATION: Set a flag for JavaScript redirection ---
+                        if ($user['role'] == 'teacher') {
+                            $redirect_to_dashboard = 'teacher';
+                        } elseif ($user['role'] == 'admin') {
+                            $redirect_to_dashboard = 'admin';
+                        }
+                        // We will NOT header("Location: ...") immediately here.
+                        // Instead, JavaScript will handle the redirect after showing the popup.
+
                         if (isset($_POST['remember']) && $_POST['remember'] == '1') {
-                            setcookie('rememberme', session_id(), time() + (86400 * 30), "/"); // 30 days
+                            setcookie('rememberme', session_id(), time() + (86400 * 30), "/", "", false, true);
                         }
 
-                        if ($user['role'] == 'teacher') {
-                            header("Location: teacher_dashboard.php");
-                            exit();
-                        } elseif ($user['role'] == 'admin') {
-                            header("Location: admin_dashboard.php");
-                            exit();
-                        }
                     } else {
                         $error = "Invalid username/email or password.";
                     }
@@ -227,19 +233,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             animation: fadeInOut 4s ease forwards;
         }
 
-        /* NEW: Style for show/hide password icon */
+        /* Style for show/hide password icon */
         .password-toggle-icon {
             cursor: pointer;
-            position: absolute; /* Position it absolutely within the relative container */
-            right: 10px; /* Adjust as needed for spacing from the right */
-            top: 50%; /* Center vertically */
-            transform: translateY(-50%); /* Adjust for perfect vertical centering */
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
             display: flex;
             align-items: center;
-            color: #6c757d; /* Icon color */
-            z-index: 10; /* Ensure it's above the input */
-            padding: 0 0.75rem; /* Padding for visual space around the icon */
-            height: 38px; /* Match input height for alignment */
+            color: #6c757d;
+            z-index: 10;
+            padding: 0 0.75rem;
+            height: 38px;
         }
 
         .password-toggle-icon i {
@@ -247,15 +253,60 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             line-height: 1;
         }
 
-        /* Optionally, you might want to remove or adjust the original .input-group-text if it's still being used elsewhere
-        .input-group-text {
-            // display: none; // Or modify as needed if other input groups use it
+        /* --- NEW: Styles for the loading/redirect popup --- */
+        .loading-popup {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Center perfectly */
+            z-index: 9999; /* Very high z-index to be on top */
+            background-color: rgba(255, 255, 255, 0.95); /* Semi-transparent white */
+            padding: 2.5rem 3.5rem;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
         }
-        */
+
+        .loading-popup.show {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .loading-popup .spinner-border {
+            width: 3rem;
+            height: 3rem;
+            margin-bottom: 1rem;
+            color: #007bff; /* Bootstrap primary blue */
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-popup p {
+            font-size: 1.2rem;
+            color: #333;
+            font-weight: 500;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* --- END NEW --- */
     </style>
 </head>
 <body>
 
+<div id="loadingRedirectPopup" class="loading-popup">
+    <div class="spinner-border text-primary" role="status">
+        <span class="sr-only">Loading...</span>
+    </div>
+    <p id="loadingMessage">Logging in...</p>
+</div>
 <div class="page relative error-page3">
     <div class="row no-gutters">
         <div class="col-xl-6 h-100vh">
@@ -343,7 +394,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </form>
 
                     <div class="card-body border-top-0 pb-6 pt-2">
-                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -363,7 +414,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
 <script>
     // Show/hide password toggle
-    // Targeting the new class 'password-toggle-icon'
     const togglePassword = document.querySelector('#togglePassword i');
     const password = document.querySelector('#password');
 
@@ -384,6 +434,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           alert.style.display = 'none';
         }, 4000);
       }
+
+      // --- NEW: Loading/Redirect Popup Logic ---
+      const loadingRedirectPopup = document.getElementById('loadingRedirectPopup');
+      const loadingMessage = document.getElementById('loadingMessage');
+
+      // PHP variable to determine if redirection is needed
+      const redirectToDashboard = <?php echo json_encode($redirect_to_dashboard); ?>;
+
+      if (redirectToDashboard) {
+          loadingMessage.textContent = `Redirecting to ${redirectToDashboard} dashboard...`;
+          loadingRedirectPopup.classList.add('show');
+
+          // Delay the actual redirection to allow the popup to be seen
+          setTimeout(() => {
+              if (redirectToDashboard === 'admin') {
+                  window.location.href = 'admin_dashboard.php';
+              } else if (redirectToDashboard === 'teacher') {
+                  window.location.href = 'teacher_dashboard.php';
+              }
+          }, 1500); // Show popup for 1.5 seconds before redirecting
+      }
+      // --- END NEW ---
     });
 </script>
 
