@@ -11,7 +11,7 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
-include 'db_connection.php';
+include 'db_connection.php'; // Ensure this file exists and handles database connection
 $error = null;
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
@@ -21,6 +21,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $user_identifier = trim($_POST['user_identifier']);
         $password_attempt = $_POST['password'];
 
+        // IMPORTANT: In a real application, you should hash passwords (e.g., using password_hash())
+        // and verify them with password_verify(). Plaintext password storage is highly insecure.
         if (strlen($password_attempt) < 8) {
             $error = "Password must be at least 8 characters long.";
         } else {
@@ -33,15 +35,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 if ($result->num_rows == 1) {
                     $user = $result->fetch_assoc();
 
-                    // Plaintext password check (temporary)
+                    // Plaintext password check (temporary - REPLACE WITH HASHING IN PRODUCTION)
                     if ($password_attempt === $user['password']) {
                         $_SESSION['user_id'] = $user['id'];
                         $_SESSION['username'] = $user['username'];
                         $_SESSION['role'] = $user['role'];
-                        session_regenerate_id(true);
+                        session_regenerate_id(true); // Regenerate session ID for security
 
                         if (isset($_POST['remember']) && $_POST['remember'] == '1') {
-                            setcookie('rememberme', session_id(), time() + (86400 * 30), "/");
+                            setcookie('rememberme', session_id(), time() + (86400 * 30), "/"); // 30 days
                         }
 
                         if ($user['role'] == 'teacher') {
@@ -70,7 +72,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
-    <!-- Meta data -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0" />
     <meta content="DayOne - Multipurpose Admin & Dashboard Template" name="description" />
@@ -79,30 +80,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <title>Login | Language Monitoring System</title>
 
-    <!-- Favicon -->
     <link rel="icon" href="../../assets/images/brand/unimapicon.png" type="unimapicon" />
 
-    <!-- Bootstrap CSS -->
     <link href="../../assets/plugins/bootstrap/css/bootstrap.css" rel="stylesheet" />
 
-    <!-- Bootstrap Icons CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
 
-    <!-- Style CSS -->
     <link href="../../assets/css/style.css" rel="stylesheet" />
     <link href="../../assets/css/dark.css" rel="stylesheet" />
     <link href="../../assets/css/skin-modes.css" rel="stylesheet" />
 
-    <!-- Animate CSS -->
     <link href="../../assets/css/animated.css" rel="stylesheet" />
 
-    <!-- Icons CSS -->
     <link href="../../assets/css/icons.css" rel="stylesheet" />
 
-    <!-- Select2 CSS -->
     <link href="../../assets/plugins/select2/select2.min.css" rel="stylesheet" />
 
-    <!-- P-scroll bar CSS -->
     <link href="../../assets/plugins/p-scrollbar/p-scrollbar.css" rel="stylesheet" />
 
     <style>
@@ -190,7 +183,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             height: 100%;
             object-fit: cover;
             z-index: 0;
-            opacity: 0.2;
+            opacity: 0.2; /* Initial opacity for animation */
             animation: zoomFadeIn 2s ease forwards;
         }
 
@@ -208,7 +201,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             max-width: 400px;
             margin: auto;
             animation: fadeSlideScaleIn 2.5s ease forwards;
-            opacity: 0;
+            opacity: 0; /* Initial opacity for animation */
         }
 
         @keyframes fadeSlideScaleIn {
@@ -224,43 +217,47 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         /* Animation for error alert */
         @keyframes fadeInOut {
-          0% {opacity: 0; transform: translateY(-20px);}
-          10% {opacity: 1; transform: translateY(0);}
-          90% {opacity: 1; transform: translateY(0);}
-          100% {opacity: 0; transform: translateY(-20px);}
+            0% {opacity: 0; transform: translateY(-20px);}
+            10% {opacity: 1; transform: translateY(0);}
+            90% {opacity: 1; transform: translateY(0);}
+            100% {opacity: 0; transform: translateY(-20px);}
         }
 
         .alert-animated {
-          animation: fadeInOut 4s ease forwards;
+            animation: fadeInOut 4s ease forwards;
         }
 
-        /* Style for show/hide password */
-        .input-group {
-            position: relative;
-        }
-
-        .input-group-text {
+        /* NEW: Style for show/hide password icon */
+        .password-toggle-icon {
             cursor: pointer;
+            position: absolute; /* Position it absolutely within the relative container */
+            right: 10px; /* Adjust as needed for spacing from the right */
+            top: 50%; /* Center vertically */
+            transform: translateY(-50%); /* Adjust for perfect vertical centering */
             display: flex;
             align-items: center;
-            padding: 0 0.75rem;
-            background-color: #f8f9fa;
-            border-left: 1px solid #ced4da;
-            height: 38px;
+            color: #6c757d; /* Icon color */
+            z-index: 10; /* Ensure it's above the input */
+            padding: 0 0.75rem; /* Padding for visual space around the icon */
+            height: 38px; /* Match input height for alignment */
         }
 
-        .input-group-text i {
+        .password-toggle-icon i {
             font-size: 1.25rem;
             line-height: 1;
-            color: #6c757d;
         }
+
+        /* Optionally, you might want to remove or adjust the original .input-group-text if it's still being used elsewhere
+        .input-group-text {
+            // display: none; // Or modify as needed if other input groups use it
+        }
+        */
     </style>
 </head>
 <body>
 
 <div class="page relative error-page3">
     <div class="row no-gutters">
-        <!-- Left side with image and welcome message -->
         <div class="col-xl-6 h-100vh">
             <div class="left-image-container">
                 <img src="../../img/loginbg2.jpg" alt="Login Image" />
@@ -271,7 +268,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
         </div>
 
-        <!-- Right side login form -->
         <div class="col-xl-6 bg-white h-100vh">
             <div class="container">
                 <div class="customlogin-content">
@@ -287,7 +283,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </div>
 
                     <?php if (isset($error)): ?>
-                        <div class="alert alert-danger mx-4 <?php echo ($error === 'Password must be at least 8 characters long.') ? 'alert-animated' : ''; ?>">
+                        <div class="alert alert-danger mx-4 <?php echo ($error === 'Password must be at least 6 characters long.') ? 'alert-animated' : ''; ?>">
                             <?php echo htmlspecialchars($error); ?>
                         </div>
                     <?php endif; ?>
@@ -308,7 +304,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="password">Password</label>
-                            <div class="input-group">
+                            <div style="position: relative;">
                                 <input
                                     class="form-control"
                                     id="password"
@@ -318,7 +314,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                                     required
                                     minlength="8"
                                 />
-                                <span class="input-group-text" id="togglePassword">
+                                <span class="password-toggle-icon" id="togglePassword">
                                     <i class="bi bi-eye"></i>
                                 </span>
                             </div>
@@ -347,32 +343,27 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </form>
 
                     <div class="card-body border-top-0 pb-6 pt-2">
-                        <!-- Optional footer or social icons -->
-                    </div>
+                        </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Jquery js-->
 <script src="../../assets/plugins/jquery/jquery.min.js"></script>
 
-<!-- Bootstrap4 js-->
 <script src="../../assets/plugins/bootstrap/popper.min.js"></script>
 <script src="../../assets/plugins/bootstrap/js/bootstrap.min.js"></script>
 
-<!-- Select2 js -->
 <script src="../../assets/plugins/select2/select2.full.min.js"></script>
 
-<!-- P-scroll js-->
 <script src="../../assets/plugins/p-scrollbar/p-scrollbar.js"></script>
 
-<!-- Custom js-->
 <script src="../../assets/js/custom.js"></script>
 
 <script>
     // Show/hide password toggle
+    // Targeting the new class 'password-toggle-icon'
     const togglePassword = document.querySelector('#togglePassword i');
     const password = document.querySelector('#password');
 

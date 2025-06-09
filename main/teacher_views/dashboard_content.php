@@ -77,7 +77,7 @@
 <div class="container mx-auto">
     <div class="mb-8">
         <h2 class="text-3xl font-semibold text-gray-800 mb-2">Welcome back, <?php echo htmlspecialchars($teacher_username); ?>!</h2>
-        <p class="text-gray-600">Here's what's happening with your language monitoring today.</p>
+        
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

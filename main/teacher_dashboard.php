@@ -11,12 +11,16 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
 $teacher_id = $_SESSION['user_id'];
 
 // Retrieve and unset session messages for feedback to the user
-$language_message = $_SESSION['language_message'] ?? '';
+// language_error is kept here to be displayed as a normal banner for errors,
+// as the modal is specifically for success messages.
 $language_error = $_SESSION['language_error'] ?? '';
 $profile_update_success = $_SESSION['profile_update_success'] ?? '';
 $profile_update_errors = $_SESSION['profile_update_errors'] ?? [];
 
-unset($_SESSION['language_message'], $_SESSION['language_error'], $_SESSION['profile_update_success'], $_SESSION['profile_update_errors']);
+// UNSET language_error if it has been read, to prevent it from persisting on refresh
+// NOTE: language_set_success is managed within set_language_content.php for modal display.
+unset($_SESSION['language_error'], $_SESSION['profile_update_success'], $_SESSION['profile_update_errors']);
+
 
 // Generate CSRF token if not already present in the session
 if (empty($_SESSION['csrf_token'])) {
@@ -45,7 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_language_action']
     }
 
     // Check if a language is already set for this date for this teacher
-    // We select teacher_id because it's part of the primary key and indicates existence.
     $sql_check = "SELECT teacher_id FROM teacher_daily_languages WHERE teacher_id = ? AND setting_date = ?";
     $stmt_check = $conn->prepare($sql_check);
 
@@ -56,13 +59,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_language_action']
 
         if ($row_check = $result_check->fetch_assoc()) {
             // If a record exists, update the language_id.
-            // Removed 'set_at = NOW()' as 'set_at' column does not exist in your table.
             $sql_update = "UPDATE teacher_daily_languages SET language_id = ? WHERE teacher_id = ? AND setting_date = ?";
             $stmt_update = $conn->prepare($sql_update);
             if ($stmt_update) {
                 $stmt_update->bind_param("iis", $language_id, $teacher_id, $setting_date);
                 if ($stmt_update->execute()) {
-                    $_SESSION['language_message'] = "Daily language updated successfully for " . htmlspecialchars($setting_date) . "!";
+                    // Set a specific session flag for the modal to pick up
+                    $_SESSION['language_set_success'] = true; // THIS IS THE KEY CHANGE
                 } else {
                     $_SESSION['language_error'] = "Failed to update daily language: " . $stmt_update->error;
                 }
@@ -72,13 +75,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_language_action']
             }
         } else {
             // If no record exists, insert a new one.
-            // CORRECTED: Removed NOW() from the VALUES clause to match the 3 columns specified.
             $sql_insert = "INSERT INTO teacher_daily_languages (teacher_id, setting_date, language_id) VALUES (?, ?, ?)";
             $stmt_insert = $conn->prepare($sql_insert);
             if ($stmt_insert) {
                 $stmt_insert->bind_param("isi", $teacher_id, $setting_date, $language_id);
                 if ($stmt_insert->execute()) {
-                    $_SESSION['language_message'] = "Daily language set successfully for " . htmlspecialchars($setting_date) . "!";
+                    // Set a specific session flag for the modal to pick up
+                    $_SESSION['language_set_success'] = true; // THIS IS THE KEY CHANGE
                 } else {
                     $_SESSION['language_error'] = "Failed to set daily language: " . $stmt_insert->error;
                 }
@@ -175,13 +178,13 @@ if ($stmt_fetch_lang) {
             $current_language_for_selected_date_id = $row_current['id']; // Store ID for dropdown selection
             // Format display based on page context
             if ($page === 'dashboard' || $page === 'profile') {
-               $current_language_name_for_selected_date_display = htmlspecialchars($row_current['language_name']) . " (" . $display_date_str_for_language . ")"; // Changed "for Today" to just date
+               $current_language_name_for_selected_date_display = htmlspecialchars($row_current['language_name']) . " (" . $display_date_str_for_language . ")";
             } else { // For set_language page, it shows for the $selected_date_str
                $current_language_name_for_selected_date_display = htmlspecialchars($row_current['language_name']);
             }
         } else { // No language set for the specific date
             if ($page === 'dashboard' || $page === 'profile') {
-                $current_language_name_for_selected_date_display = "No language set for today"; // Simplified message for dashboard
+                $current_language_name_for_selected_date_display = "No language set for today";
             } else { // For set_language page
                 $current_language_name_for_selected_date_display = "Not Set for " . $display_date_str_for_language;
             }
@@ -328,44 +331,42 @@ $chart_labels_json = json_encode($chart_labels);
         ::-webkit-scrollbar-thumb { background: #a0aec0; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: #718096; }
 
-        
         .sidebar {
-    background-color: #1e3a8a; /* darker blue */
-    border-right: 1px solid #cce7f0;
-}
+            background-color: #1e3a8a; /* darker blue */
+            border-right: 1px solid #cce7f0;
+        }
 
-.sidebar-header {
-    border-bottom: none !important;
-}
-       .sidebar-item,
-.sidebar-item i {
-    color: #f8fafc;
-}
-.sidebar-item:hover {
-    background-color: #3b82f6;
-    color: #ffffff;
-}
-.sidebar-item:hover i {
-    color: #ffffff;
-}
-.sidebar-item.active {
-    background-color: #2563eb;
-    color: #ffffff;
-}
-.sidebar-item.active i {
-    color: #ffffff;
-}
+        .sidebar-header {
+            border-bottom: none !important;
+        }
+        .sidebar-item,
+        .sidebar-item i {
+            color: #f8fafc;
+        }
+        .sidebar-item:hover {
+            background-color: #3b82f6;
+            color: #ffffff;
+        }
+        .sidebar-item:hover i {
+            color: #ffffff;
+        }
+        .sidebar-item.active {
+            background-color: #2563eb;
+            color: #ffffff;
+        }
+        .sidebar-item.active i {
+            color: #ffffff;
+        }
 
-
-.sidebar-item:hover {
-    background-color: #2a65f3; /* Darker blue */
-    border-left-color: #ffffff;
-}
-.sidebar-item.active {
-    background-color: #3a75ff; /* Active highlight */
-    color: #ffffff;
-    border-left-color: #ffffff;
-}
+        .sidebar-item:hover {
+            background-color: #2a65f3; /* Darker blue */
+            border-left-color: #ffffff;
+        }
+        .sidebar-item.active {
+            background-color: #3a75ff; /* Active highlight */
+            color: #ffffff;
+            border-left-color: #ffffff;
+        }
         .sidebar.collapsed { width: 5rem; }
         .sidebar.collapsed .sidebar-header .logo-text,
         .sidebar.collapsed .sidebar-item span,
@@ -374,7 +375,7 @@ $chart_labels_json = json_encode($chart_labels);
         .sidebar.collapsed .sidebar-header .sidebar-logo-icon { margin-right: 0 !important; }
         .sidebar.collapsed .sidebar-item { justify-content: center; padding-left: 0; padding-right: 0; }
         .sidebar.collapsed .sidebar-item i { margin-right: 0 !important; }
-        .sidebar.collapsed .sidebar-item.active { border-left-width: 0px; border-bottom: 4px solid #4299e1; border-radius: 0.5rem; }
+        .sidebar.collapsed .sidebar-item.active { border-left-width: 0px; border-bottom: 4px solidrgb(255, 255, 255); border-radius: 0.5rem; }
 
         .content-area { padding-left: 0; transition: margin-left 0.1s ease-in-out; }
 
@@ -413,14 +414,13 @@ $chart_labels_json = json_encode($chart_labels);
 
 
         /* Rotate animation for the sidebar toggle icon */
-#sidebarToggleBottom i {
-    transition: transform 0.3s ease-in-out; /* Add transition for smooth rotation */
-}
+        #sidebarToggleBottom i {
+            transition: transform 0.3s ease-in-out; /* Add transition for smooth rotation */
+        }
 
-.sidebar.collapsed #sidebarToggleBottom i {
-    transform: rotate(360deg); /* Rotate the icon when the sidebar is collapsed */
-}
-
+        .sidebar.collapsed #sidebarToggleBottom i {
+            transform: rotate(180deg); /* Rotate the icon when the sidebar is collapsed */
+        }
     </style>
 </head>
 <body class="flex h-screen overflow-hidden">
@@ -428,8 +428,7 @@ $chart_labels_json = json_encode($chart_labels);
     <aside class="sidebar w-64 text-gray-700 flex flex-col fixed h-full md:relative md:translate-x-0 z-30 flex-shrink-0" id="sidebar">
         <div class="sidebar-header p-5 flex items-center justify-center ">
             <i class="fas fa-graduation-cap text-4xl text-white mr-3 sidebar-logo-icon"></i>
-<span class="logo-text text-xl font-bold text-white">Teacher Panel</span>
-
+            <span class="logo-text text-xl font-bold text-white">Teacher Panel</span>
         </div>
         <nav class="flex-grow p-4 space-y-1.5 overflow-y-auto">
             <a href="teacher_dashboard.php?page=dashboard" id="nav-dashboard" class="sidebar-item flex items-center px-4 py-2.5 rounded-md text-sm">
@@ -476,13 +475,11 @@ $chart_labels_json = json_encode($chart_labels);
                                 <p class="text-sm font-semibold text-gray-800" role="none"><?php echo htmlspecialchars($teacher_username); ?></p>
                                 <p class="text-xs text-gray-500 truncate" role="none"><?php echo htmlspecialchars($teacher_email); ?></p>
                             </div>
-                            <a href="teacher_dashboard.php?page=profile" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem" tabindex="-1" id="dropdown-profile-link">
-                                <i class="fas fa-user-circle w-5 mr-3 text-gray-400"></i>View Profile
-                            </a>
-                            <a href="#" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem" tabindex="-1" id="dropdown-settings-link"> <i class="fas fa-cog w-5 mr-3 text-gray-400"></i>Account Settings
+                            
+                            <a href="teacher_dashboard.php?page=profile" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem" tabindex="-1" id="dropdown-settings-link"> <i class="fas fa-cog w-5 mr-3 text-gray-400"></i>Account Settings
                             </a>
                             <div class="border-t border-gray-100 my-1"></div>
-                            <form action="logout.php" method="post" role="none"> <button type="submit" id="nav-logout-dropdown" class="w-full text-left flex items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 hover:text-red-700" role="menuitem" tabindex="-1">
+                            <form action="logout_teacher.php" method="post" role="none"> <button type="submit" id="nav-logout-dropdown" class="w-full text-left flex items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 hover:text-red-700" role="menuitem" tabindex="-1">
                                     <i class="fas fa-sign-out-alt w-5 mr-3"></i>Logout
                                 </button>
                             </form>
@@ -494,14 +491,12 @@ $chart_labels_json = json_encode($chart_labels);
 
         <main class="flex-1 p-6 md:p-8 overflow-y-auto">
             <?php
-            // Display success or error messages
-            if (!empty($language_message) && $page === 'set_language') {
-                echo "<div class='mb-4 p-4 text-sm text-green-700 bg-green-100 rounded-lg' role='alert'>" . htmlspecialchars($language_message) . "</div>";
-            }
+            // Display error messages (not success messages for set_language, as that's handled by the modal)
             if (!empty($language_error) && $page === 'set_language') {
                 echo "<div class='mb-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg' role='alert'>" . htmlspecialchars($language_error) . "</div>";
             }
 
+            // Display profile update success/error messages
             if (!empty($profile_update_success) && $page === 'profile') {
                 echo "<div class='mb-4 p-4 text-sm text-green-700 bg-green-100 rounded-lg' role='alert'>" . htmlspecialchars($profile_update_success) . "</div>";
             }
@@ -522,6 +517,9 @@ $chart_labels_json = json_encode($chart_labels);
                     if (file_exists($base_views_path . 'set_language_content.php')) {
                         // Pass the available_languages to the included file
                         $available_languages_list = $available_languages;
+                        // For the set_language page, we also pass the language_set_success session variable
+                        // directly to the included file so it can trigger the modal.
+                        $language_set_success = $_SESSION['language_set_success'] ?? false;
                         include $base_views_path . 'set_language_content.php';
                         $content_loaded = true;
                     }
@@ -564,132 +562,111 @@ $chart_labels_json = json_encode($chart_labels);
                                     </div>
                                     <div><label for="name" class="block text-sm font-medium text-gray-700 mb-1">Username</label><input type="text" name="name" id="name" value="<?php echo htmlspecialchars($teacher_username); ?>" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required></div>
                                     <div><label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" name="email" id="email" value="<?php echo htmlspecialchars($teacher_email); ?>" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required></div>
-                                    <div><label for="password" class="block text-sm font-medium text-gray-700 mb-1">New Password (blank to keep current)</label><input type="password" name="password" id="password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></div>
-                                    <div><label for="confirm_password" class="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label><input type="password" name="confirm_password" id="confirm_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></div>
-                                    <div class="flex justify-end space-x-3"><button type="button" id="cancelEditButton" class="px-5 py-2.5 rounded-md text-gray-700 bg-gray-200 hover:bg-gray-300">Cancel</button><button type="submit" class="px-5 py-2.5 rounded-md bg-green-600 text-white hover:bg-green-700 flex items-center shadow-md"><i class="fas fa-save mr-2"></i>Save Changes</button></div>
+                                    <div><label for="current_password" class="block text-sm font-medium text-gray-700 mb-1">Current Password</label><input type="password" name="current_password" id="current_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Required to update profile"></div>
+                                    <div><label for="new_password" class="block text-sm font-medium text-gray-700 mb-1">New Password </label><input type="password" name="new_password" id="new_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Leave blank to keep current"></div>
+                                    <div><label for="confirm_new_password" class="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label><input type="password" name="confirm_new_password" id="confirm_new_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></div>
+                                    <div class="flex justify-end space-x-3">
+                                        <button type="button" id="cancelEditButton" class="px-6 py-3 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors duration-200">Cancel</button>
+                                        <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 flex items-center shadow-md"><i class="fas fa-save mr-2"></i>Save </button>
+                                    </div>
                                 </form>
                             </div>
                         </div>
                     </div>
-                    <script>
-
-
-
-
-
-                        // JavaScript for profile edit functionality
-                        document.addEventListener('DOMContentLoaded', () => {
-                            const editBtn = document.getElementById('editProfileButton');
-                            const cancelBtn = document.getElementById('cancelEditButton');
-                            const viewDiv = document.getElementById('profileView');
-                            const editDiv = document.getElementById('profileEdit');
-                            const picInput = document.getElementById('profile_pic');
-                            const picPreview = document.getElementById('profilePicPreview');
-
-                            if(editBtn && cancelBtn && viewDiv && editDiv) {
-                                editBtn.addEventListener('click', () => {
-                                    viewDiv.classList.add('hidden');
-                                    editDiv.classList.remove('hidden');
-                                });
-                                cancelBtn.addEventListener('click', () => {
-                                    editDiv.classList.add('hidden');
-                                    viewDiv.classList.remove('hidden');
-                                });
-                            }
-                            if(picInput && picPreview) {
-                                picInput.addEventListener('change', function(e) {
-                                    if (e.target.files && e.target.files[0]) {
-                                        const reader = new FileReader();
-                                        reader.onload = function(event) {
-                                            picPreview.src = event.target.result;
-                                        }
-                                        reader.readAsDataURL(e.target.files[0]);
-                                    }
-                                });
-                            }
-                        });
-                    </script>
                     <?php
                     $content_loaded = true;
                     break;
                 case 'dashboard':
                 default:
                     if (file_exists($base_views_path . 'dashboard_content.php')) {
-                        // Pass the chart data variables to the included file
                         include $base_views_path . 'dashboard_content.php';
                         $content_loaded = true;
                     }
                     break;
             }
 
-            // Fallback message if no content is loaded for the requested page
-            if (!$content_loaded && $page !== 'profile') { // Profile content is handled inline
-                echo "<div class='p-4 text-sm text-yellow-700 bg-yellow-100 rounded-lg' role='alert'>Content for '<strong>" . htmlspecialchars($page) . "</strong>' not found at expected location.</div>";
+            if (!$content_loaded) {
+                // Fallback for unknown pages
+                echo "<div class='text-center py-10 text-gray-500'>Page not found or content not available.</div>";
             }
             ?>
         </main>
     </div>
 
     <script>
-        // JavaScript for sidebar and dropdown functionality
-        document.addEventListener('DOMContentLoaded', function () {
+        document.addEventListener('DOMContentLoaded', function() {
             const sidebar = document.getElementById('sidebar');
-            const menuButton = document.getElementById('menuButton'); // For mobile sidebar toggle
-            const sidebarToggleBottom = document.getElementById('sidebarToggleBottom'); // For desktop sidebar collapse/expand
-
+            const menuButton = document.getElementById('menuButton');
+            const sidebarToggleBottom = document.getElementById('sidebarToggleBottom');
             const profileDropdownButton = document.getElementById('profileDropdownButton');
             const profileDropdownMenu = document.getElementById('profileDropdownMenu');
             const profileDropdownContainer = document.getElementById('profileDropdownContainer');
+            const navItems = document.querySelectorAll('.sidebar-item');
 
-            // Function to toggle desktop sidebar collapse/expand
-            function toggleDesktopSidebar() {
+            // Set active navigation item based on current page
+            const currentPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
+            const activeNavItem = document.getElementById(`nav-${currentPage}`);
+            if (activeNavItem) {
+                activeNavItem.classList.add('active');
+            }
+
+            // Sidebar toggle functionality
+            menuButton.addEventListener('click', function() {
+                sidebar.classList.toggle('-translate-x-full');
+            });
+
+            sidebarToggleBottom.addEventListener('click', function() {
                 sidebar.classList.toggle('collapsed');
-                const icon = sidebarToggleBottom.querySelector('i');
-                if (sidebar.classList.contains('collapsed')) {
-                    icon.classList.remove('fa-angle-left');
-                    icon.classList.add('fa-angle-right');
-                } else {
-                    icon.classList.remove('fa-angle-right');
-                    icon.classList.add('fa-angle-left');
+                sidebar.classList.toggle('w-64');
+                sidebar.classList.toggle('w-20'); // Adjust this width as needed for collapsed state
+                // You might also want to adjust content-area's margin-left here if it's not handled purely by flexbox
+            });
+
+            // Profile dropdown functionality
+            profileDropdownButton.addEventListener('click', function() {
+                profileDropdownMenu.classList.toggle('hidden');
+                // You might want to add animation classes here too, e.g., for fade-in/out
+            });
+
+            // Close dropdown if clicked outside
+            document.addEventListener('click', function(event) {
+                if (!profileDropdownContainer.contains(event.target)) {
+                    profileDropdownMenu.classList.add('hidden');
                 }
-            }
-            
-            // Event listener for desktop sidebar toggle button
-            if (sidebarToggleBottom) {
-                sidebarToggleBottom.addEventListener('click', toggleDesktopSidebar);
+            });
+
+            // Profile edit/view toggle
+            const editProfileButton = document.getElementById('editProfileButton');
+            const cancelEditButton = document.getElementById('cancelEditButton');
+            const profileView = document.getElementById('profileView');
+            const profileEdit = document.getElementById('profileEdit');
+            const profilePicInput = document.getElementById('profile_pic');
+            const profilePicPreview = document.getElementById('profilePicPreview');
+
+            if (editProfileButton) { // Ensure elements exist on the page
+                editProfileButton.addEventListener('click', function() {
+                    profileView.classList.add('hidden');
+                    profileEdit.classList.remove('hidden');
+                });
             }
 
-            // Event listener for mobile menu button to show/hide sidebar
-            if (menuButton && sidebar) {
-                menuButton.addEventListener('click', () => {
-                    sidebar.classList.toggle('-translate-x-full'); // Tailwind class for off-canvas toggle
+            if (cancelEditButton) { // Ensure elements exist on the page
+                cancelEditButton.addEventListener('click', function() {
+                    profileEdit.classList.add('hidden');
+                    profileView.classList.remove('hidden');
                 });
             }
-            
-            // Event listeners for profile dropdown menu
-            if (profileDropdownButton && profileDropdownMenu && profileDropdownContainer) {
-                profileDropdownButton.addEventListener('click', function (event) {
-                    event.stopPropagation(); // Prevent document click from closing it immediately
-                    profileDropdownMenu.classList.toggle('hidden');
-                });
-                // Close dropdown if clicked outside
-                document.addEventListener('click', function (event) {
-                    if (!profileDropdownContainer.contains(event.target) && !profileDropdownMenu.classList.contains('hidden')) {
-                        profileDropdownMenu.classList.add('hidden');
+
+            if (profilePicInput && profilePicPreview) {
+                profilePicInput.addEventListener('change', function(event) {
+                    if (event.target.files && event.target.files[0]) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            profilePicPreview.src = e.target.result;
+                        };
+                        reader.readAsDataURL(event.target.files[0]);
                     }
                 });
-            }
-
-            // Highlight active sidebar item based on current page
-            const currentPageForNav = '<?php echo $page; ?>';
-            const navLinks = {
-                'dashboard': document.getElementById('nav-dashboard'),
-                'set_language': document.getElementById('nav-set-language'),
-                'language_usage': document.getElementById('nav-language-usage'),
-                'profile': document.getElementById('nav-profile')
-            };
-            if (navLinks[currentPageForNav]) {
-                navLinks[currentPageForNav].classList.add('active');
             }
         });
     </script>
