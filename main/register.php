@@ -24,6 +24,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $error = "Username or email already registered.";
         } else {
             // Store password as plaintext (matching index.php login)
+            // IMPORTANT: In a real application, you should hash passwords (e.g., using password_hash())
+            // and verify them with password_verify(). Plaintext password storage is highly insecure.
             $stmt = $conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'teacher')");
             $stmt->bind_param("sss", $username, $email, $password);
 
@@ -45,7 +47,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <!DOCTYPE html>
 <html lang="en" dir="ltr">
 <head>
-    <!-- Meta data -->
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0" />
     <meta content="DayOne - Multipurpose Admin & Dashboard Template" name="description" />
@@ -54,30 +55,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <title>Register | Language Monitoring System</title>
 
-    <!-- Favicon -->
     <link rel="icon" href="../../assets/images/brand/unimapicon.png" type="unimapicon" />
 
-    <!-- Bootstrap CSS -->
     <link href="../../assets/plugins/bootstrap/css/bootstrap.css" rel="stylesheet" />
 
-    <!-- Bootstrap Icons CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
 
-    <!-- Style CSS -->
     <link href="../../assets/css/style.css" rel="stylesheet" />
     <link href="../../assets/css/dark.css" rel="stylesheet" />
     <link href="../../assets/css/skin-modes.css" rel="stylesheet" />
 
-    <!-- Animate CSS -->
     <link href="../../assets/css/animated.css" rel="stylesheet" />
 
-    <!-- Icons CSS -->
     <link href="../../assets/css/icons.css" rel="stylesheet" />
 
-    <!-- Select2 CSS -->
     <link href="../../assets/plugins/select2/select2.min.css" rel="stylesheet" />
 
-    <!-- P-scroll bar CSS -->
     <link href="../../assets/plugins/p-scrollbar/p-scrollbar.css" rel="stylesheet" />
 
     <style>
@@ -119,27 +112,47 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             0% { opacity: 0; transform: translateY(30px) scale(0.95); }
             100% { opacity: 1; transform: translateY(0) scale(1); }
         }
+
+        /* NEW: Styles for the eye icon outside the input group (Option 1) */
+        .password-toggle-icon {
+            cursor: pointer;
+            position: absolute; /* Position it absolutely within the relative container */
+            right: 10px; /* Adjust as needed for spacing from the right */
+            top: 50%; /* Center vertically */
+            transform: translateY(-50%); /* Adjust for perfect vertical centering */
+            display: flex;
+            align-items: center;
+            color: #6c757d; /* Icon color */
+            z-index: 10; /* Ensure it's above the input */
+            padding: 0 0.75rem; /* Padding for visual space around the icon */
+            height: 38px; /* Match input height for alignment */
+        }
+        .password-toggle-icon i {
+            font-size: 1.25rem;
+            line-height: 1;
+        }
+        /* Remove or comment out the old input-group-text styles if they are no longer needed for password fields */
+        /*
         .input-group-text {
             cursor: pointer; display: flex; align-items: center; padding: 0 0.75rem;
             background-color: #f8f9fa; border-left: 1px solid #ced4da; height: 38px;
         }
         .input-group-text i { font-size: 1.25rem; line-height: 1; color: #6c757d; }
+        */
     </style>
 </head>
 <body>
 <div class="page relative error-page3">
     <div class="row no-gutters">
-        <!-- Left side with image and welcome message -->
         <div class="col-xl-6 h-100vh">
             <div class="left-image-container">
                 <img src="../../img/loginbg.jpg" alt="Register Image" />
                 <div class="welcome-message">
-                    <h1>Welcome to Smart Language Learning Hub</h1>
+                    <h1>Welcome to Smart Language Learning System</h1>
                     <p>IoT-Based Smart Language Monitoring System for Primary Schools</p>
                 </div>
             </div>
         </div>
-        <!-- Right side registration form -->
         <div class="col-xl-6 bg-white h-100vh">
             <div class="container">
                 <div class="customlogin-content">
@@ -168,18 +181,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="password">Password</label>
-                            <div class="input-group">
+                            <div style="position: relative;">
                                 <input id="password" type="password" class="form-control" name="password" minlength="8" required />
-                                <span class="input-group-text" id="togglePassword" style="cursor: pointer;">
+                                <span class="password-toggle-icon" id="togglePassword">
                                     <i class="bi bi-eye"></i>
                                 </span>
                             </div>
                         </div>
                         <div class="form-group">
                             <label class="form-label" for="confirm">Confirm Password</label>
-                            <div class="input-group">
+                            <div style="position: relative;">
                                 <input id="confirm" type="password" class="form-control" name="confirm" minlength="8" required />
-                                <span class="input-group-text" id="toggleConfirm" style="cursor: pointer;">
+                                <span class="password-toggle-icon" id="toggleConfirm">
                                     <i class="bi bi-eye"></i>
                                 </span>
                             </div>
@@ -192,23 +205,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         </div>
                     </form>
                     <div class="card-body border-top-0 pb-6 pt-2">
-                        <!-- Optional footer or social icons -->
-                    </div>
+                        </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
-<!-- Jquery js-->
 <script src="../../assets/plugins/jquery/jquery.min.js"></script>
-<!-- Bootstrap4 js-->
 <script src="../../assets/plugins/bootstrap/popper.min.js"></script>
 <script src="../../assets/plugins/bootstrap/js/bootstrap.min.js"></script>
-<!-- Select2 js -->
 <script src="../../assets/plugins/select2/select2.full.min.js"></script>
-<!-- P-scroll js-->
 <script src="../../assets/plugins/p-scrollbar/p-scrollbar.js"></script>
-<!-- Custom js-->
 <script src="../../assets/js/custom.js"></script>
 <script>
     // Show/hide password for password field

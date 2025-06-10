@@ -321,11 +321,13 @@ $chart_labels_json = json_encode($chart_labels);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Teacher Panel - <?php echo htmlspecialchars($page_title); ?></title>
+    <link rel="icon" href="assets/images/brand/unimaplogo.png" type="image/unimaplogo">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/2.0.8/css/dataTables.dataTables.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f7fafc;  }
+        body { font-family: 'Inter', sans-serif; background-color: #f7fafc; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #edf2f7; border-radius: 10px; }
         ::-webkit-scrollbar-thumb { background: #a0aec0; border-radius: 10px; }
@@ -400,10 +402,6 @@ $chart_labels_json = json_encode($chart_labels);
         .stat-card .text-sm { color: inherit; opacity: 0.8; }
         .stat-card .text-xl { color: inherit; }
 
-        #profileDropdownMenu a i { transition: color 0.1s ease-in-out; }
-        #profileDropdownMenu a:hover i { color: #3182ce; }
-        #nav-logout-dropdown:hover i { color: #c53030; }
-
         /* General Calendar Grid style - day-specific styles including .current-day will be in dashboard_content.php */
         .calendar-grid {
             display: grid;
@@ -420,6 +418,164 @@ $chart_labels_json = json_encode($chart_labels);
 
         .sidebar.collapsed #sidebarToggleBottom i {
             transform: rotate(180deg); /* Rotate the icon when the sidebar is collapsed */
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none; /* Hidden by default */
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5); /* Transparent overlay */
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            width: 300px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .icon {
+            width: 50px;
+            height: 50px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+
+        .buttons {
+            display: flex;
+            justify-content: space-around;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background-color: #45a049;
+        }
+
+        #cancelBtn {
+            background-color: #FF6F61;
+        }
+
+        #cancelBtn:hover {
+            background-color: #ff5c4b;
+        }
+
+        /* Styles for the dropdown button text and arrow when active/hover */
+        #dropdownAvatarNameButton {
+            color: #1f2937; /* Default gray/dark color for text */
+            transition: color 0.1s ease-in-out; /* Smooth transition for text color */
+        }
+
+        #dropdownAvatarNameButton.active-dropdown-button,
+        #dropdownAvatarNameButton:hover {
+            color: #2563eb; /* Blue color on active or hover */
+        }
+
+        #dropdownAvatarNameButton svg {
+            transition: stroke 0.1s ease-in-out; /* Smooth transition for SVG stroke color */
+        }
+
+        #dropdownAvatarNameButton.active-dropdown-button svg,
+        #dropdownAvatarNameButton:hover svg {
+            stroke: #2563eb; /* Blue color for the SVG arrow on active or hover */
+        }
+
+        /* NEW/MODIFIED: Specific styles for the dropdown menu background and items */
+        #dropdownAvatarName {
+            /* Changed from dark:bg-gray-700 to a more visible color */
+            background-color: #ffffff; /* White background for good contrast */
+            border: 1px solid #e5e7eb; /* Subtle border */
+        }
+
+        #dropdownAvatarName .px-4.py-3 {
+            background-color: #f9fafb; /* Very light gray for the header background */
+            border-bottom: 1px solid #e5e7eb; /* Separator for the header */
+            color: #1f2937; /* Ensure username/email text is dark and visible */
+        }
+
+        #dropdownAvatarName .px-4.py-3 .font-medium {
+             color: #1f2937; /* Darker color for username */
+        }
+        #dropdownAvatarName .px-4.py-3 .truncate {
+            color: #4b5563; /* Slightly lighter for email */
+        }
+
+
+        #dropdownAvatarName .py-2 ul {
+            background-color: #ffffff; /* Ensure ul background matches dropdown */
+        }
+
+        #dropdownAvatarName .py-2 a {
+            display: flex; /* To align icon and text */
+            align-items: center; /* Vertically align items */
+            color: #4a5568; /* Default text color for items */
+            transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out; /* Smooth transitions */
+        }
+
+        /* Hover state for dropdown menu items */
+        #dropdownAvatarName .py-2 a:hover {
+            background-color: #e0f2f7; /* Light blue on hover for better contrast */
+            color: #0c4a6e; /* Darker blue text on hover */
+        }
+
+        #dropdownAvatarName .py-2 a i {
+            margin-right: 0.75rem; /* Space between icon and text */
+            width: 1.25rem; /* Standard icon width */
+            text-align: center; /* Center the icon */
+            color: #6b7280; /* A slightly darker gray for icons */
+            transition: color 0.1s ease-in-out;
+        }
+
+        #dropdownAvatarName .py-2 a:hover i {
+            color: #0c4a6e; /* Darker blue icon color on hover */
+        }
+        
+        /* Style for the Sign out button */
+        #logoutForm #nav-logout-dropdown { /* Targeted specifically for the anchor within the form */
+            display: flex; /* To align icon and text */
+            align-items: center; /* Vertically align items */
+            color: #4a5568; /* Default text color for sign out */
+            transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
+            width: 100%; /* Ensure button takes full width */
+            text-align: left; /* Align text to the left */
+            padding: 0.5rem 1rem; /* Adjust padding for consistency */
+        }
+
+        #logoutForm #nav-logout-dropdown:hover {
+            background-color: #ffe4e6; /* Light red on hover for sign out */
+            color: #ef4444; /* Red text on hover */
+        }
+        
+        #logoutForm #nav-logout-dropdown i {
+            margin-right: 0.75rem;
+            width: 1.25rem;
+            text-align: center;
+            color: #6b7280;
+            transition: color 0.1s ease-in-out;
+        }
+
+        #logoutForm #nav-logout-dropdown:hover i {
+            color: #ef4444; /* Red icon color on hover */
         }
     </style>
 </head>
@@ -448,7 +604,7 @@ $chart_labels_json = json_encode($chart_labels);
                 <span>My Profile</span>
             </a>
         </nav>
-        <div class="p-4  text-center">
+        <div class="p-4 text-center">
             <button id="sidebarToggleBottom" class="text-white focus:outline-none p-2 rounded-full hover:bg-gray-200">
                 <i class="fas fa-angle-left text-xl"></i>
             </button>
@@ -465,23 +621,37 @@ $chart_labels_json = json_encode($chart_labels);
             </div>
             <div class="flex items-center space-x-4">
                 <div class="relative" id="profileDropdownContainer">
-                    <button id="profileDropdownButton" class="flex items-center space-x-2 focus:outline-none">
-                        <span class="text-sm text-gray-700 font-medium hidden sm:inline"><?php echo htmlspecialchars($teacher_username); ?></span>
-                        <img src="<?php echo $topbar_avatar_url; ?>" alt="User Avatar" class="w-9 h-9 rounded-full object-cover border-2 border-transparent hover:border-blue-500 transition-colors" onerror="this.onerror=null; this.src='https://placehold.co/40x40/CBD5E0/4A5568?text=<?php echo $teacher_profile_pic_initial; ?>';">
+                    <button id="dropdownAvatarNameButton" data-dropdown-toggle="dropdownAvatarName" class="flex items-center text-sm pe-1 font-medium text-gray-900 rounded-full hover:text-blue-600 dark:hover:text-blue-500 md:me-0 focus:ring-4 focus:ring-gray-100 dark:focus:ring-gray-700 dark:text-white" type="button">
+                        <span class="sr-only">Open user menu</span>
+                        <img class="w-8 h-8 me-2 rounded-full" src="<?php echo $profile_page_pic_url; ?>" alt="user photo" onerror="this.onerror=null; this.src='https://placehold.co/32x32/4299E1/FFFFFF?text=<?php echo $teacher_profile_pic_initial; ?>';">
+                        <?php echo htmlspecialchars($teacher_username); ?>
+                        <svg class="w-2.5 h-2.5 ms-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
+                            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 4 4 4-4"/>
+                        </svg>
                     </button>
-                    <div id="profileDropdownMenu" class="absolute right-0 mt-2 w-60 bg-white rounded-md shadow-xl z-50 hidden origin-top-right ring-1 ring-black ring-opacity-5 focus:outline-none" role="menu" aria-orientation="vertical" aria-labelledby="profileDropdownButton">
-                        <div class="py-1" role="none">
-                            <div class="px-4 py-3 border-b border-gray-200">
-                                <p class="text-sm font-semibold text-gray-800" role="none"><?php echo htmlspecialchars($teacher_username); ?></p>
-                                <p class="text-xs text-gray-500 truncate" role="none"><?php echo htmlspecialchars($teacher_email); ?></p>
-                            </div>
-                            
-                            <a href="teacher_dashboard.php?page=profile" class="flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-100 hover:text-gray-900" role="menuitem" tabindex="-1" id="dropdown-settings-link"> <i class="fas fa-cog w-5 mr-3 text-gray-400"></i>Account Settings
-                            </a>
-                            <div class="border-t border-gray-100 my-1"></div>
-                            <form action="logout_teacher.php" method="post" role="none"> <button type="submit" id="nav-logout-dropdown" class="w-full text-left flex items-center px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 hover:text-red-700" role="menuitem" tabindex="-1">
-                                    <i class="fas fa-sign-out-alt w-5 mr-3"></i>Logout
-                                </button>
+
+                    <div id="dropdownAvatarName" class="z-10 hidden absolute right-0 mt-5 bg-white divide-y divide-gray-200 rounded-lg shadow-sm w-44">
+                        <div class="px-4 py-3 text-sm text-gray-900">
+                            <div class="font-medium "><?php echo htmlspecialchars($teacher_username); ?></div>
+                            <div class="truncate"><?php echo htmlspecialchars($teacher_email); ?></div>
+                        </div>
+                        <ul class="py-2 text-sm text-gray-700" aria-labelledby="dropdownInformdropdownAvatarNameButtonationButton">
+                            <li>
+                                <a href="teacher_dashboard.php?page=dashboard" class="block px-4 py-2 hover:bg-gray-100">
+                                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                                </a>
+                            </li>
+                            <li>
+                                <a href="teacher_dashboard.php?page=profile" class="block px-4 py-2 hover:bg-gray-100">
+                                    <i class="fas fa-user-cog"></i> Profile Settings
+                                </a>
+                            </li>
+                        </ul>
+                        <div class="py-2">
+                             <form action="logout_teacher.php" method="post" role="none" id="logoutForm">
+                                <a href="#" id="nav-logout-dropdown" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">
+                                    <i class="fas fa-sign-out-alt"></i> Sign out
+                                </a>
                             </form>
                         </div>
                     </div>
@@ -594,81 +764,139 @@ $chart_labels_json = json_encode($chart_labels);
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            const sidebar = document.getElementById('sidebar');
-            const menuButton = document.getElementById('menuButton');
-            const sidebarToggleBottom = document.getElementById('sidebarToggleBottom');
-            const profileDropdownButton = document.getElementById('profileDropdownButton');
-            const profileDropdownMenu = document.getElementById('profileDropdownMenu');
-            const profileDropdownContainer = document.getElementById('profileDropdownContainer');
-            const navItems = document.querySelectorAll('.sidebar-item');
+document.addEventListener('DOMContentLoaded', function() {
+    const sidebar = document.getElementById('sidebar');
+    const menuButton = document.getElementById('menuButton');
+    const sidebarToggleBottom = document.getElementById('sidebarToggleBottom');
+    
+    const dropdownAvatarNameButton = document.getElementById('dropdownAvatarNameButton');
+    const dropdownAvatarName = document.getElementById('dropdownAvatarName');
+    const profileDropdownContainer = document.getElementById('profileDropdownContainer');
+    
+    const navItems = document.querySelectorAll('.sidebar-item');
 
-            // Set active navigation item based on current page
-            const currentPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
-            const activeNavItem = document.getElementById(`nav-${currentPage}`);
-            if (activeNavItem) {
-                activeNavItem.classList.add('active');
-            }
+    // Set active navigation item based on current page
+    const currentPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
+    const activeNavItem = document.getElementById(`nav-${currentPage}`);
+    if (activeNavItem) {
+        activeNavItem.classList.add('active');
+    }
 
-            // Sidebar toggle functionality
-            menuButton.addEventListener('click', function() {
-                sidebar.classList.toggle('-translate-x-full');
-            });
+    // Sidebar toggle functionality
+    menuButton.addEventListener('click', function() {
+        sidebar.classList.toggle('-translate-x-full');
+    });
 
-            sidebarToggleBottom.addEventListener('click', function() {
-                sidebar.classList.toggle('collapsed');
-                sidebar.classList.toggle('w-64');
-                sidebar.classList.toggle('w-20'); // Adjust this width as needed for collapsed state
-                // You might also want to adjust content-area's margin-left here if it's not handled purely by flexbox
-            });
+    sidebarToggleBottom.addEventListener('click', function() {
+        sidebar.classList.toggle('collapsed');
+        sidebar.classList.toggle('w-64');
+        sidebar.classList.toggle('w-20');
+    });
 
-            // Profile dropdown functionality
-            profileDropdownButton.addEventListener('click', function() {
-                profileDropdownMenu.classList.toggle('hidden');
-                // You might want to add animation classes here too, e.g., for fade-in/out
-            });
+    // Profile dropdown functionality
+    if (dropdownAvatarNameButton && dropdownAvatarName) {
+        dropdownAvatarNameButton.addEventListener('click', function() {
+            dropdownAvatarName.classList.toggle('hidden');
+            dropdownAvatarNameButton.classList.toggle('active-dropdown-button');
+        });
 
-            // Close dropdown if clicked outside
-            document.addEventListener('click', function(event) {
-                if (!profileDropdownContainer.contains(event.target)) {
-                    profileDropdownMenu.classList.add('hidden');
-                }
-            });
-
-            // Profile edit/view toggle
-            const editProfileButton = document.getElementById('editProfileButton');
-            const cancelEditButton = document.getElementById('cancelEditButton');
-            const profileView = document.getElementById('profileView');
-            const profileEdit = document.getElementById('profileEdit');
-            const profilePicInput = document.getElementById('profile_pic');
-            const profilePicPreview = document.getElementById('profilePicPreview');
-
-            if (editProfileButton) { // Ensure elements exist on the page
-                editProfileButton.addEventListener('click', function() {
-                    profileView.classList.add('hidden');
-                    profileEdit.classList.remove('hidden');
-                });
-            }
-
-            if (cancelEditButton) { // Ensure elements exist on the page
-                cancelEditButton.addEventListener('click', function() {
-                    profileEdit.classList.add('hidden');
-                    profileView.classList.remove('hidden');
-                });
-            }
-
-            if (profilePicInput && profilePicPreview) {
-                profilePicInput.addEventListener('change', function(event) {
-                    if (event.target.files && event.target.files[0]) {
-                        const reader = new FileReader();
-                        reader.onload = function(e) {
-                            profilePicPreview.src = e.target.result;
-                        };
-                        reader.readAsDataURL(event.target.files[0]);
-                    }
-                });
+        // Close dropdown if clicked outside
+        document.addEventListener('click', function(event) {
+            if (!profileDropdownContainer.contains(event.target)) {
+                dropdownAvatarName.classList.add('hidden');
+                dropdownAvatarNameButton.classList.remove('active-dropdown-button');
             }
         });
+    }
+
+    // Profile edit/view toggle
+    const editProfileButton = document.getElementById('editProfileButton');
+    const cancelEditButton = document.getElementById('cancelEditButton');
+    const profileView = document.getElementById('profileView');
+    const profileEdit = document.getElementById('profileEdit');
+    const profilePicInput = document.getElementById('profile_pic');
+    const profilePicPreview = document.getElementById('profilePicPreview');
+
+    if (editProfileButton) {
+        editProfileButton.addEventListener('click', function() {
+            profileView.classList.add('hidden');
+            profileEdit.classList.remove('hidden');
+        });
+    }
+
+    if (cancelEditButton) {
+        cancelEditButton.addEventListener('click', function() {
+            profileEdit.classList.add('hidden');
+            profileView.classList.remove('hidden');
+        });
+    }
+
+    if (profilePicInput && profilePicPreview) {
+        profilePicInput.addEventListener('change', function(event) {
+            if (event.target.files && event.target.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    profilePicPreview.src = e.target.result;
+                };
+                reader.readAsDataURL(event.target.files[0]);
+            }
+        });
+    }
+
+    // --- Logout Confirmation Modal --- //
+    const logoutModal = document.getElementById('logoutConfirmationModal');
+    const logoutButton = document.getElementById('nav-logout-dropdown'); // This is now an anchor tag
+    const cancelLogoutButton = document.getElementById('cancelLogoutBtn');
+    const confirmLogoutButton = document.getElementById('confirmLogoutBtn');
+    const logoutForm = document.getElementById('logoutForm');
+
+    if (logoutButton && logoutModal && logoutForm) {
+        logoutButton.addEventListener('click', function(event) {
+            event.preventDefault(); // Prevent default link behavior
+            logoutModal.classList.remove('hidden');
+            logoutModal.style.display = 'flex';
+        });
+
+        cancelLogoutButton.addEventListener('click', function() {
+            logoutModal.classList.add('hidden');
+            logoutModal.style.display = 'none';
+        });
+
+        confirmLogoutButton.addEventListener('click', function() {
+            logoutForm.submit();
+        });
+
+        logoutModal.addEventListener('click', function(event) {
+            if (event.target === logoutModal) {
+               logoutModal.classList.add('hidden');
+               logoutModal.style.display = 'none';
+            }
+        });
+    }
+});
+
     </script>
+
+<div id="logoutConfirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white p-8 rounded-lg shadow-xl text-center max-w-sm w-full mx-4">
+        <div class="flex justify-center mb-4">
+            <svg class="w-16 h-16 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+            </svg>
+        </div>
+        <h2 class="text-2xl font-bold text-gray-800 mb-2">Logout</h2>
+        <p class="text-gray-600 mb-6">Are you sure you want to log out?</p>
+        <div class="flex flex-col space-y-3">
+             <button id="confirmLogoutBtn" class="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                Log Out
+            </button>
+            <button id="cancelLogoutBtn" class="px-4 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors duration-200">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+<script type="text/javascript" src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script type="text/javascript" src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
 </body>
 </html>
