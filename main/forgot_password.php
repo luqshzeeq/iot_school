@@ -47,7 +47,7 @@ function send_reset_email($conn, $email) {
         $stmt2->bind_param("sss", $email, $token, $expires_at);
         
         if ($stmt2->execute()) {
-            $baseUrl = "http://localhost/iot_school/main"; 
+            $baseUrl = "http://localhost"; 
             $reset_link = $baseUrl . "/reset_password.php?token=" . $token;
 
             $mail = new PHPMailer(true);

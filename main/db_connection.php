@@ -14,5 +14,6 @@ if ($conn->connect_error) {
     die("Connection failed: " . $conn->connect_error);
 }
 
-
+// Add this line to set the connection's timezone to +08:00
+$conn->query("SET time_zone = '+08:00'"); 
 ?>
