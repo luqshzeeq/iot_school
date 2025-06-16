@@ -1,12 +1,13 @@
 <?php
 // This file contains the standardized header for all admin pages.
+// session_start() is expected to be called by the including page (e.g., admin_manage_users.php)
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- The Title will be set on each individual page -->
+    <!-- The Title will be set on each individual page via JavaScript or PHP variable -->
     <link rel="icon" type="image/png" href="/assets/images/brand/adminlogo.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
@@ -62,6 +63,66 @@
             color: #9ca3af;
             width: 1.25rem; /* Consistent icon spacing */
         }
+
+        /* Styles for the common modal structure (used by delete, success, and logout) */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-box {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+            transform: translateY(-20px);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .modal-overlay.active .modal-box {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .modal-box .icon-wrapper {
+            /* Default icon wrapper style, can be overridden by specific modal types */
+            background-color: #e2e8f0; /* Gray-200 */
+            color: #4a5568; /* Gray-700 */
+            border-radius: 9999px; /* Full rounded */
+            width: 56px; /* h-14 */
+            height: 56px; /* w-14 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem; /* mx-auto mb-6 */
+        }
+        .modal-box .icon-wrapper i {
+            font-size: 2rem; /* text-4xl */
+        }
+
+        /* Specific styles for Logout modal icon */
+        .logout-modal .icon-wrapper {
+            /* Using a combination of colors for the logout icon as per image */
+            background-color: #e0f2f7; /* Light blue background */
+            /* The icon itself could be a custom SVG or combination, using a door icon for now */
+            color: #2980b9; /* A shade of blue for the icon */
+        }
     </style>
 </head>
 <body> <!-- Body tag starts here, closed at the very end of this file -->
@@ -101,7 +162,8 @@
                         </div>
                         <div class="border-t border-gray-200"></div>
                         <div class="py-1">
-                            <a href="logout_admin.php" class="dropdown-item text-red-600">
+                            <!-- Change this to a button or span to trigger the modal -->
+                            <a href="#" id="logoutTrigger" class="dropdown-item text-red-600">
                                 <i class="fas fa-sign-out-alt"></i> Sign out
                             </a>
                         </div>
@@ -114,9 +176,33 @@
         <!-- This div remains open, to be closed by the including page (e.g., admin_manage_users.php) -->
         <!-- <main> tag and its content are part of the including page. -->
 
+<!-- Logout Confirmation Modal HTML -->
+<div id="logoutModal" class="modal-overlay">
+    <div class="modal-box logout-modal">
+        <div class="icon-wrapper">
+            <!-- Icon resembling the image: a door with an arrow -->
+            <svg class="h-14 w-14" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+            </svg>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Oh no! You're leaving...</h3>
+        <p class="text-sm text-gray-500 mb-6">
+            Are you sure?
+        </p>
+        <div class="flex flex-col space-y-3">
+            <button id="cancelLogoutButton" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                Cancel 
+            </button>
+            <button id="confirmLogoutButton" class="w-full border border-blue-500 py-2 px-4 rounded-md bg-white hover:bg-blue-50 text-blue-600 font-semibold transition duration-150 ease-in-out">
+                Sign out
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     document.addEventListener('DOMContentLoaded', () => {
-        // User dropdown functionality
+        // User dropdown functionality (existing)
         const userMenuButton = document.getElementById('userMenuButton');
         const userDropdownMenu = document.getElementById('userDropdownMenu');
         const userMenuChevron = document.getElementById('userMenuChevron');
@@ -140,10 +226,36 @@
                 }
             });
         }
-        // NOTE: Sidebar toggle and page title update logic should ideally be here if header.php defines
-        // the mobileSidebarToggle and page-title element and they are always present.
-        // For now, these were kept in admin_manage_users.php's script block in the previous step.
-        // If you move them here, ensure they are compatible with this setup.
+
+        // --- Logout Confirmation Modal Logic ---
+        const logoutTrigger = document.getElementById('logoutTrigger'); // The "Sign out" link in the dropdown
+        const logoutModal = document.getElementById('logoutModal');
+        const confirmLogoutButton = document.getElementById('confirmLogoutButton');
+        const cancelLogoutButton = document.getElementById('cancelLogoutButton');
+
+        if (logoutTrigger && logoutModal && confirmLogoutButton && cancelLogoutButton) {
+            logoutTrigger.addEventListener('click', (e) => {
+                e.preventDefault(); // Prevent default link behavior (navigating immediately)
+                userDropdownMenu.classList.remove('active'); // Close the user dropdown menu
+                logoutModal.classList.add('active'); // Show the logout modal
+            });
+
+            cancelLogoutButton.addEventListener('click', () => {
+                logoutModal.classList.remove('active'); // Hide the modal
+            });
+
+            confirmLogoutButton.addEventListener('click', () => {
+                // If confirmed, navigate to the logout page
+                window.location.href = logoutTrigger.href; // Use the href from the original link
+            });
+
+            // Close modal if overlay is clicked
+            logoutModal.addEventListener('click', (e) => {
+                if (e.target === logoutModal) { // Check if the click was directly on the overlay
+                    logoutModal.classList.remove('active');
+                }
+            });
+        }
     });
 </script>
 </body>
