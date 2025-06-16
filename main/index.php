@@ -7,7 +7,7 @@ if (isset($_SESSION['user_id'])) {
         header("Location: teacher_dashboard.php");
         exit();
     } elseif ($_SESSION['role'] == 'admin') {
-        header("Location: admin_dashboard.php");
+        header("Location: admin_overview.php");
         exit();
     }
 }

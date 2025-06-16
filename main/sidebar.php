@@ -6,11 +6,11 @@ $menu_items = [
     'admin_dashboard.php'       => ['label' => 'Manage Languages', 'icon' => 'fa-language'],
     'admin_manage_users.php'    => ['label' => 'Manage Users', 'icon' => 'fa-users-cog'],
     'admin_monitor_devices.php' => ['label' => 'Monitor Devices', 'icon' => 'fa-desktop'],
-    'logout_admin.php'          => ['label' => 'Logout', 'icon' => 'fa-sign-out-alt'],
+    
 ];
 ?>
 
-<aside id="sidebar" class="sidebar w-64 bg-slate-800 text-slate-100 flex-shrink-0 overflow-y-auto">
+<aside id="sidebar" class="sidebar w-64 bg-slate-800 text-slate-100 flex-shrink-0 overflow-y-auto flex flex-col h-full">
     <div class="p-4">
         <a href="admin_overview.php" class="flex items-center space-x-2 text-white text-2xl font-semibold">
             <i class="fa-solid fa-user-secret"></i> <span class="sidebar-text">Admin Panel</span>
@@ -18,9 +18,6 @@ $menu_items = [
     </div>
     <nav class="mt-4">
         <?php foreach ($menu_items as $file => $item):
-            // Define classes for active and inactive/hover states
-            // Active: A calm blue background with white text
-            // Inactive: Lighter slate text, with a slightly lighter slate background and white text on hover
             $base_classes = "text-slate-300 hover:bg-slate-700 hover:text-white";
             $active_classes = "bg-sky-600 text-white"; // Using a sky blue for active item accent
 
@@ -32,7 +29,10 @@ $menu_items = [
             </a>
         <?php endforeach; ?>
     </nav>
-    <div class="p-4 mt-auto border-t border-slate-700">
+
+    <!-- THIS IS THE TOGGLE BUTTON AT THE VERY BOTTOM, NOW CENTERED -->
+    <!-- Added 'flex' and 'justify-center' to horizontally center the button -->
+    <div class="p-4 mt-auto flex justify-center">
         <button id="sidebarToggle" class="text-slate-400 hover:text-white focus:outline-none">
             <i class="fas fa-chevron-left"></i>
         </button>

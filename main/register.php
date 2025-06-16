@@ -3,6 +3,8 @@ include 'db_connection.php';
 session_start();
 
 $error = null;
+$registration_success = false; // Flag to indicate successful registration
+$success_message = "Registration Completed Successfully"; // Default success message
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $username = mysqli_real_escape_string($conn, $_POST['username']);
@@ -15,32 +17,39 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     } elseif (strlen($password) < 8) {
         $error = "Password must be at least 8 characters long.";
     } else {
+        // Use prepared statements for checking existence
         $check = $conn->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-        $check->bind_param("ss", $username, $email);
-        $check->execute();
-        $check->store_result();
+        if ($check) {
+            $check->bind_param("ss", $username, $email);
+            $check->execute();
+            $check->store_result();
 
-        if ($check->num_rows > 0) {
-            $error = "Username or email already registered.";
-        } else {
-            // Store password as plaintext (matching index.php login)
-            // IMPORTANT: In a real application, you should hash passwords (e.g., using password_hash())
-            // and verify them with password_verify(). Plaintext password storage is highly insecure.
-            $stmt = $conn->prepare("INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, 'teacher')");
-            $stmt->bind_param("sss", $username, $email, $password);
-
-            if ($stmt->execute()) {
-                header("Location: index.php?register=success");
-                exit();
+            if ($check->num_rows > 0) {
+                $error = "Username or email already registered.";
             } else {
-                $error = "Registration failed. Please try again.";
-            }
-            $stmt->close();
-        }
-        $check->close();
-    }
+                // IMPORTANT: In a real application, you should hash passwords (e.g., using password_hash())
+                // and verify them with password_verify(). Plaintext password storage is highly insecure.
+                $stmt = $conn->prepare("INSERT INTO users (username, email, password, role, created_at) VALUES (?, ?, ?, 'teacher', NOW())"); // Added created_at
+                if ($stmt) {
+                    $stmt->bind_param("sss", $username, $email, $password);
 
-    $conn->close();
+                    if ($stmt->execute()) {
+                        $registration_success = true; // Set success flag
+                        // No redirect here, let JS handle the modal
+                    } else {
+                        $error = "Registration failed. Please try again: " . $stmt->error;
+                    }
+                    $stmt->close();
+                } else {
+                    $error = "Error preparing registration statement: " . $conn->error;
+                }
+            }
+            $check->close();
+        } else {
+            $error = "Error preparing user check statement: " . $conn->error;
+        }
+    }
+    $conn->close(); // Close connection after all DB ops for POST request
 }
 ?>
 
@@ -60,6 +69,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <link href="../../assets/plugins/bootstrap/css/bootstrap.css" rel="stylesheet" />
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+    <!-- Ensure Font Awesome 6 is loaded if you use far fa-check-circle -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
 
     <link href="../../assets/css/style.css" rel="stylesheet" />
     <link href="../../assets/css/dark.css" rel="stylesheet" />
@@ -131,14 +142,71 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             font-size: 1.25rem;
             line-height: 1;
         }
-        /* Remove or comment out the old input-group-text styles if they are no longer needed for password fields */
-        /*
-        .input-group-text {
-            cursor: pointer; display: flex; align-items: center; padding: 0 0.75rem;
-            background-color: #f8f9fa; border-left: 1px solid #ced4da; height: 38px;
+        
+        /* Styles for the custom success modal (from other admin pages, adapted) */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
         }
-        .input-group-text i { font-size: 1.25rem; line-height: 1; color: #6c757d; }
-        */
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-box {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+            transform: translateY(-20px);
+            opacity: 0;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        .modal-overlay.active .modal-box {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .modal-box .icon-wrapper {
+            background-color: #d1fae5; /* Light green background */
+            color: #10b981; /* Darker green icon */
+            border-radius: 9999px; /* Full rounded */
+            width: 56px; /* h-14 */
+            height: 56px; /* w-14 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem; /* mx-auto mb-6 */
+        }
+        .modal-box .icon-wrapper i {
+            font-size: 2rem; /* text-4xl */
+        }
+        /* Specific button style for the success modal */
+        .success-modal-button {
+            background-color: #6a5acd; /* Purple from the image */
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: background-color 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+        .success-modal-button:hover {
+            background-color: #5d4ea5; /* Darker purple on hover */
+        }
     </style>
 </head>
 <body>
@@ -205,12 +273,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         </div>
                     </form>
                     <div class="card-body border-top-0 pb-6 pt-2">
-                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Custom Registration Success Modal HTML -->
+<div id="registrationSuccessModal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="icon-wrapper">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Registered Successfully</h3>
+        <p class="text-sm text-gray-500 mb-6" id="registrationModalMessage">
+            Welcome to Smart Language Learning System
+        </p>
+        <button id="backToLoginButton" class="w-full success-modal-button">
+            Back to Login
+        </button>
+    </div>
+</div>
+
 <script src="../../assets/plugins/jquery/jquery.min.js"></script>
 <script src="../../assets/plugins/bootstrap/popper.min.js"></script>
 <script src="../../assets/plugins/bootstrap/js/bootstrap.min.js"></script>
@@ -221,22 +306,59 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Show/hide password for password field
     const togglePassword = document.querySelector('#togglePassword i');
     const passwordInput = document.querySelector('#password');
-    togglePassword.addEventListener('click', function () {
-        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-        passwordInput.setAttribute('type', type);
-        this.classList.toggle('bi-eye');
-        this.classList.toggle('bi-eye-slash');
-    });
+    if (togglePassword && passwordInput) {
+        togglePassword.addEventListener('click', function () {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            this.classList.toggle('bi-eye');
+            this.classList.toggle('bi-eye-slash');
+        });
+    }
 
     // Show/hide password for confirm field
     const toggleConfirm = document.querySelector('#toggleConfirm i');
     const confirmInput = document.querySelector('#confirm');
-    toggleConfirm.addEventListener('click', function () {
-        const type = confirmInput.getAttribute('type') === 'password' ? 'text' : 'password';
-        confirmInput.setAttribute('type', type);
-        this.classList.toggle('bi-eye');
-        this.classList.toggle('bi-eye-slash');
-    });
+    if (toggleConfirm && confirmInput) {
+        toggleConfirm.addEventListener('click', function () {
+            const type = confirmInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            confirmInput.setAttribute('type', type);
+            this.classList.toggle('bi-eye');
+            this.classList.toggle('bi-eye-slash');
+        });
+    }
+
+    // --- Registration Success Modal Logic ---
+    const registrationSuccessModal = document.getElementById('registrationSuccessModal');
+    const backToLoginButton = document.getElementById('backToLoginButton');
+    const registrationModalMessage = document.getElementById('registrationModalMessage');
+
+    // PHP variable to determine if registration was successful
+    const registrationSuccess = <?php echo json_encode($registration_success); ?>;
+    const registrationCustomMessage = "Welcome to the Nodepay Network"; // Message from your image
+
+    if (registrationSuccess) {
+        // Set the custom message (or use default if dynamic from PHP is not needed)
+        registrationModalMessage.textContent = registrationCustomMessage; 
+        registrationSuccessModal.classList.add('active'); // Show the modal
+    }
+
+    // Handle "Back to Login" button click
+    if (backToLoginButton) {
+        backToLoginButton.addEventListener('click', () => {
+            registrationSuccessModal.classList.remove('active'); // Hide modal
+            window.location.href = 'index.php'; // Redirect to login page
+        });
+    }
+
+    // Close modal if overlay is clicked
+    if (registrationSuccessModal) {
+        registrationSuccessModal.addEventListener('click', (e) => {
+            if (e.target === registrationSuccessModal) { // Check if the click was directly on the overlay
+                registrationSuccessModal.classList.remove('active');
+                window.location.href = 'index.php'; // Redirect to login page
+            }
+        });
+    }
 </script>
 </body>
 </html>
