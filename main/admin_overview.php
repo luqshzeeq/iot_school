@@ -23,81 +23,152 @@ if (!$conn) {
     exit();
 }
 
-// --- 3. Full PHP Logic for Managing Languages ---
-$search_query = trim($_GET['search_query'] ?? '');
-$error_message = $_SESSION['error_message'] ?? null;
-$success_message = $_SESSION['success_message'] ?? null;
-unset($_SESSION['error_message'], $_SESSION['success_message']); // Clear messages after retrieving
-
+// --- PHP Logic for Language Management (Add/Edit/Delete) ---
+// Note: This part handles POST actions for language CRUD. GET parameters for search are separated below.
 $language_to_edit_id = null;
 $language_to_edit_name = '';
 
-function get_redirect_url_with_search($base_url, $query) {
-    return $query ? $base_url . "?search_query=" . urlencode($query) : $base_url;
+$modal_success_message = null;
+$modal_error_message = null; // For errors from POST actions handled immediately
+
+// Function to construct a redirect URL (redefined locally if not in header.php)
+if (!function_exists('get_redirect_url_with_search')) {
+    function get_redirect_url_with_search($base_url, $query) {
+        $url = $base_url;
+        $params = [];
+        if ($query !== '') {
+            $params['search_query'] = $query;
+        }
+        if (!empty($params)) {
+            $url .= "?" . http_build_query($params);
+        }
+        return $url;
+    }
 }
 
+// --- Date Calculation (For general dashboard stats - Last 7 Days) ---
+// These are for user registrations, existing password resets, and daily language settings tables.
+$today_timestamp = time();
+$end_date_timestamp = $today_timestamp;
+$start_date_timestamp = strtotime('-6 days', $today_timestamp); // Last 7 days
+$start_date_str = date('Y-m-d 00:00:00', $start_date_timestamp);
+$end_date_str = date('Y-m-d 23:59:59', $end_date_timestamp);
+$start_date_query_format = date('Y-m-d', $start_date_timestamp);
+$end_date_query_format = date('Y-m-d', $end_date_timestamp);
+
+// Initialize arrays for weekly chart data
+$week_labels = [];
+$week_user_data = [];
+// This will now be specific to the "New Teacher Registrations (Last 7 Days)" chart
+$current_ts_weekly = $start_date_timestamp;
+while ($current_ts_weekly <= $end_date_timestamp) {
+    $date_key = date('Y-m-d', $current_ts_weekly);
+    $week_labels[] = date('D (d M)', $current_ts_weekly);
+    $week_user_data[$date_key] = 0; // Initialize with 0
+    $current_ts_weekly = strtotime('+1 day', $current_ts_weekly);
+}
+
+
+// --- Date Calculation (For Monthly Languages Added Chart - Jan-Dec) ---
+$current_year = date('Y');
+$start_of_year_str = date('Y-01-01 00:00:00', strtotime($current_year . '-01-01'));
+$end_of_year_str = date('Y-12-31 23:59:59', strtotime($current_year . '-12-31'));
+
+$month_labels = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+$monthly_lang_data = array_fill_keys(range(1, 12), 0); // Initialize all 12 months with 0
+
+
+// Handle POST requests for language management
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $redirect_url = get_redirect_url_with_search("admin_dashboard.php", $_POST['search_query'] ?? '');
+    $action_status_type = '';
+    $action_status_message = '';
+
     if (isset($_POST['add_language'])) {
         $new_language_name = trim($_POST['language_name'] ?? '');
         if (!empty($new_language_name)) {
-            $stmt = $conn->prepare("INSERT INTO languages (language_name, created_by) VALUES (?, ?)");
+            $stmt = $conn->prepare("INSERT INTO languages (language_name, created_by, created_at) VALUES (?, ?, NOW())"); // Added NOW() for created_at
             if ($stmt) {
                 $stmt->bind_param("si", $new_language_name, $_SESSION['user_id']);
                 if ($stmt->execute()) {
-                    $_SESSION['success_message'] = "Language '" . htmlspecialchars($new_language_name) . "' added successfully.";
+                    $action_status_type = 'success';
+                    $action_status_message = "Language '" . htmlspecialchars($new_language_name) . "' added successfully.";
                 } else {
-                    $_SESSION['error_message'] = "Error adding language: " . $stmt->error;
+                    $action_status_type = 'error';
+                    $action_status_message = "Error adding language: " . $stmt->error;
                 }
                 $stmt->close();
             } else {
-                $_SESSION['error_message'] = "Error preparing add language statement: " . $conn->error;
+                $action_status_type = 'error';
+                $action_status_message = "Error preparing add language statement: " . $conn->error;
             }
-        } else { $_SESSION['error_message'] = "Language name cannot be empty."; }
+        } else {
+            $action_status_type = 'error';
+            $action_status_message = "Language name cannot be empty.";
+        }
     }
     if (isset($_POST['delete_language'])) {
         $language_id = filter_var($_POST['language_id_to_delete'], FILTER_VALIDATE_INT);
-        if ($language_id !== false) { // Check for valid integer
+        if ($language_id !== false) {
             $stmt = $conn->prepare("DELETE FROM languages WHERE id = ?");
             if ($stmt) {
                 $stmt->bind_param("i", $language_id);
                 if ($stmt->execute()) {
-                    $_SESSION['success_message'] = ($stmt->affected_rows > 0) ? "Language deleted successfully." : "Language not found or already deleted.";
+                    $action_status_type = 'success';
+                    $action_status_message = ($stmt->affected_rows > 0) ? "Language deleted successfully." : "Language not found or already deleted.";
                 } else {
-                    $_SESSION['error_message'] = "Error deleting language: " . $stmt->error;
+                    $action_status_type = 'error';
+                    $action_status_message = "Error deleting language: " . $stmt->error;
                 }
                 $stmt->close();
             } else {
-                $_SESSION['error_message'] = "Error preparing delete language statement: " . $conn->error;
+                $action_status_type = 'error';
+                $action_status_message = "Error preparing delete language statement: " . $conn->error;
             }
-        } else { $_SESSION['error_message'] = "Invalid language ID for deletion."; }
+        } else {
+            $action_status_type = 'error';
+            $action_status_message = "Invalid language ID for deletion.";
+        }
     }
     if (isset($_POST['update_language'])) {
         $language_id = filter_var($_POST['language_id_to_update'], FILTER_VALIDATE_INT);
         $updated_name = trim($_POST['language_name'] ?? '');
-        if ($language_id !== false && !empty($updated_name)) { // Check for valid integer and non-empty name
-            $stmt = $conn->prepare("UPDATE languages SET language_name = ? WHERE id = ?");
+        if ($language_id !== false && !empty($updated_name)) {
+            $stmt = $conn->prepare("UPDATE languages SET language_name = ?, created_at = NOW() WHERE id = ?"); // Update created_at on update
             if ($stmt) {
                 $stmt->bind_param("si", $updated_name, $language_id);
                 if ($stmt->execute()) {
-                    $_SESSION['success_message'] = ($stmt->affected_rows > 0) ? "Language updated successfully." : "No changes were made to the language.";
+                    $action_status_type = 'success';
+                    $action_status_message = ($stmt->affected_rows > 0) ? "Language updated successfully." : "No changes were made to the language.";
                 } else {
-                    $_SESSION['error_message'] = "Error updating language: " . $stmt->error;
+                    $action_status_type = 'error';
+                    $action_status_message = "Error updating language: " . $stmt->error;
                 }
                 $stmt->close();
             } else {
-                $_SESSION['error_message'] = "Error preparing update language statement: " . $conn->error;
+                $action_status_type = 'error';
+                $action_status_message = "Error preparing update language statement: " . $conn->error;
             }
-        } else { $_SESSION['error_message'] = "Invalid data for update."; }
+        } else {
+            $action_status_type = 'error';
+            $action_status_message = "Invalid data for update.";
+        }
     }
-    header("Location: " . $redirect_url);
-    exit(); // Always exit after a header redirect
+
+    if ($action_status_type === 'success') {
+        $modal_success_message = $action_status_message;
+    } elseif ($action_status_type === 'error') {
+        $modal_error_message = $action_status_message;
+    }
 }
 
 // Fetch language for editing if 'edit_language' GET parameter is present.
+$search_query_languages = trim($_GET['search_query_languages'] ?? ''); // Re-get for current request
 if (isset($_GET['edit_language'])) {
     $language_to_edit_id = filter_var($_GET['edit_language'], FILTER_VALIDATE_INT);
-    if ($language_to_edit_id !== false) { // Ensure it's a valid integer
+    if ($language_to_edit_id !== false) {
         $stmt = $conn->prepare("SELECT language_name FROM languages WHERE id = ?");
         if ($stmt) {
             $stmt->bind_param("i", $language_to_edit_id);
@@ -106,69 +177,132 @@ if (isset($_GET['edit_language'])) {
             if ($row = $result->fetch_assoc()) {
                 $language_to_edit_name = $row['language_name'];
             } else {
-                $_SESSION['error_message'] = "Language not found for editing.";
-                header("Location: " . get_redirect_url_with_search("admin_dashboard.php", $search_query));
-                exit(); // Exit after redirect
+                $_SESSION['error_message'] = "Language not found for editing."; // Use session for errors on redirection
+                header("Location: " . get_redirect_url_with_search("admin_dashboard.php", $search_query_languages));
+                exit();
             }
             $stmt->close();
         } else {
             $_SESSION['error_message'] = "Error preparing fetch language for edit statement: " . $conn->error;
-            header("Location: " . get_redirect_url_with_search("admin_dashboard.php", $search_query));
-            exit(); // Exit after redirect
+            header("Location: " . get_redirect_url_with_search("admin_dashboard.php", $search_query_languages));
+            exit();
         }
     } else {
         $_SESSION['error_message'] = "Invalid ID for editing.";
-        header("Location: " . get_redirect_url_with_search("admin_dashboard.php", $search_query));
-        exit(); // Exit after redirect
+        header("Location: " . get_redirect_url_with_search("admin_dashboard.php", $search_query_languages));
+        exit();
     }
 }
 
-// Fetch all languages with optional search filter.
-$sql = "SELECT id, language_name FROM languages";
-if ($search_query !== '') { $sql .= " WHERE language_name LIKE ?"; }
-$sql .= " ORDER BY id ASC";
-$stmt_all = $conn->prepare($sql);
-if ($stmt_all) {
-    if ($search_query !== '') {
-        $search_param = "%" . $search_query . "%";
-        $stmt_all->bind_param("s", $search_param);
-    }
-    if ($stmt_all->execute()) { // Check if execute was successful
-        $result_all_languages = $stmt_all->get_result();
+// --- Data for Recent Language Setups Table ---
+// Fetch all languages for the table.
+$all_languages_data = [];
+$sql_languages_table = "SELECT id, language_name, created_by, created_at FROM languages";
+// The search filter for languages is handled client-side now via JS
+$sql_languages_table .= " ORDER BY id ASC"; // Order by ID for consistency
+$stmt_all_languages_table = $conn->prepare($sql_languages_table);
+if ($stmt_all_languages_table) {
+    if ($stmt_all_languages_table->execute()) {
+        $result = $stmt_all_languages_table->get_result();
+        while($row = $result->fetch_assoc()) {
+             // Fetch username for created_by
+            $created_by_username = 'N/A';
+            if ($row['created_by']) {
+                $stmt_user = $conn->prepare("SELECT username FROM users WHERE id = ?");
+                if ($stmt_user) {
+                    $stmt_user->bind_param("i", $row['created_by']);
+                    $stmt_user->execute();
+                    $user_result = $stmt_user->get_result();
+                    if ($user_row = $user_result->fetch_assoc()) {
+                        $created_by_username = $user_row['username'];
+                    }
+                    $stmt_user->close();
+                }
+            }
+            $all_languages_data[] = [
+                'id' => $row['id'],
+                'language_name' => $row['language_name'],
+                'added_by' => $created_by_username,
+                'date_added' => $row['created_at']
+            ];
+        }
     } else {
-        $error_message = "Error executing fetch all languages statement: " . $stmt_all->error;
-        $result_all_languages = false; // Ensure result is false on failure
+        $modal_error_message = "Error executing fetch all languages statement: " . $stmt_all_languages_table->error;
     }
-    $stmt_all->close();
+    $stmt_all_languages_table->close();
 } else {
-    $error_message = "Error preparing fetch all languages statement: " . $conn->error;
-    $result_all_languages = false; // Ensure result is false on failure
+    $modal_error_message = "Error preparing fetch all languages statement: " . $conn->error;
 }
 
-// --- 3. Date Calculation (Last 7 Days) ---
-$today_timestamp = time();
-$end_date_timestamp = $today_timestamp;
-$start_date_timestamp = strtotime('-6 days', $today_timestamp);
-$start_date_str = date('Y-m-d 00:00:00', $start_date_timestamp);
-$end_date_str = date('Y-m-d 23:59:59', $end_date_timestamp);
-$start_date_query_format = date('Y-m-d', $start_date_timestamp);
-$end_date_query_format = date('Y-m-d', $end_date_timestamp);
 
-// Initialize arrays for chart data
-$week_labels = [];
-$week_user_data = [];
-$week_lang_data = [];
-
-$current_ts = $start_date_timestamp;
-while ($current_ts <= $end_date_timestamp) {
-    $date_key = date('Y-m-d', $current_ts);
-    $week_labels[] = date('D (d M)', $current_ts);
-    $week_user_data[$date_key] = 0;
-    $week_lang_data[$date_key] = 0;
-    $current_ts = strtotime('+1 day', $current_ts);
+// --- Data for Recent Password Reset Requests Table ---
+$recent_password_resets_data = [];
+$search_query_resets = trim($_GET['search_query_resets'] ?? ''); // Unique param
+$sql_recent_resets = "SELECT pr.expires_at, u.username, pr.email FROM password_resets pr JOIN users u ON pr.email = u.email WHERE pr.expires_at BETWEEN ? AND ?";
+if ($search_query_resets !== '') {
+    $sql_recent_resets .= " AND (u.username LIKE ? OR pr.email LIKE ?)";
+}
+$sql_recent_resets .= " ORDER BY pr.expires_at DESC LIMIT 100"; // Limit to a reasonable number for client-side processing
+$stmt_recent_resets = $conn->prepare($sql_recent_resets);
+if ($stmt_recent_resets) {
+    $bind_types = "ss";
+    $bind_params = [$start_date_str, $end_date_str];
+    if ($search_query_resets !== '') {
+        $search_param_resets = "%" . $search_query_resets . "%";
+        $bind_params[] = $search_param_resets;
+        $bind_params[] = $search_param_resets;
+        $bind_types .= "ss";
+    }
+    $stmt_recent_resets->bind_param($bind_types, ...$bind_params);
+    if ($stmt_recent_resets->execute()) {
+        $result = $stmt_recent_resets->get_result();
+        while($row = $result->fetch_assoc()) {
+            $recent_password_resets_data[] = [
+                'user' => $row['username'],
+                'email' => $row['email'],
+                'request_date' => $row['expires_at'],
+                'status' => (strtotime($row['expires_at']) > time()) ? 'Pending' : 'Expired' // Determine status
+            ];
+        }
+    }
+    $stmt_recent_resets->close();
 }
 
-// --- 4. Fetch All Data (Dashboard Stats) ---
+
+// --- Data for Daily Language Settings Table ---
+$teacher_daily_lang_settings_data = [];
+$search_query_daily_langs = trim($_GET['search_query_daily_langs'] ?? ''); // Unique param
+$sql_daily_langs = "SELECT tdl.setting_date, u.username AS teacher_username, l.language_name FROM teacher_daily_languages tdl JOIN users u ON tdl.teacher_id = u.id JOIN languages l ON tdl.language_id = l.id WHERE tdl.setting_date BETWEEN ? AND ?";
+if ($search_query_daily_langs !== '') {
+    $sql_daily_langs .= " AND (u.username LIKE ? OR l.language_name LIKE ?)";
+}
+$sql_daily_langs .= " ORDER BY tdl.setting_date DESC, u.username ASC LIMIT 100"; // Limit for client-side
+$stmt_daily_langs = $conn->prepare($sql_daily_langs);
+if ($stmt_daily_langs) {
+    $bind_params = [$start_date_query_format, $end_date_query_format];
+    $bind_types = "ss";
+    if ($search_query_daily_langs !== '') {
+        $search_param_daily_langs = "%" . $search_query_daily_langs . "%";
+        $bind_params[] = $search_param_daily_langs;
+        $bind_params[] = $search_param_daily_langs;
+        $bind_types .= "ss";
+    }
+    $stmt_daily_langs->bind_param($bind_types, ...$bind_params);
+    if ($stmt_daily_langs->execute()) {
+        $result = $stmt_daily_langs->get_result();
+        while ($row = $result->fetch_assoc()) {
+            $teacher_daily_lang_settings_data[] = [
+                'setting_date' => $row['setting_date'],
+                'teacher_username' => $row['teacher_username'],
+                'language_name' => $row['language_name']
+            ];
+        }
+    }
+    $stmt_daily_langs->close();
+}
+
+
+// --- 4. Fetch All Data (Dashboard Stats & Charts) ---
 $stats = [
     'total_users' => 0, 'active_users' => 0, 'inactive_users' => 0,
     'total_languages' => 0,
@@ -188,75 +322,208 @@ if ($device_result) { while($row = $device_result->fetch_assoc()) { $status_key 
 $stmt_users_chart = $conn->prepare("SELECT DATE(created_at) as reg_date, COUNT(*) as count FROM users WHERE role = 'teacher' AND DATE(created_at) BETWEEN ? AND ? GROUP BY DATE(created_at)");
 if ($stmt_users_chart) { $stmt_users_chart->bind_param("ss", $start_date_query_format, $end_date_query_format); if ($stmt_users_chart->execute()) { $result = $stmt_users_chart->get_result(); if ($result) { while($row = $result->fetch_assoc()) { if (array_key_exists($row['reg_date'], $week_user_data)) $week_user_data[$row['reg_date']] = $row['count']; } } } $stmt_users_chart->close(); }
 
-// Fetch new languages chart data & table
-$languages_by_teacher_week = [];
-$stmt_langs_chart = $conn->prepare("SELECT l.language_name, l.created_at, u.username FROM languages l LEFT JOIN users u ON l.created_by = u.id WHERE l.created_at BETWEEN ? AND ? ORDER BY l.created_at DESC");
-if ($stmt_langs_chart) { $stmt_langs_chart->bind_param("ss", $start_date_str, $end_date_str); if ($stmt_langs_chart->execute()) { $result = $stmt_langs_chart->get_result(); if ($result) { while($row = $result->fetch_assoc()) { $languages_by_teacher_week[] = $row; $date_key = date('Y-m-d', strtotime($row['created_at'])); if (array_key_exists($date_key, $week_lang_data)) { $week_lang_data[$date_key]++; } } } } $stmt_langs_chart->close(); }
+// Fetch new languages chart data (for chart) - This now needs to aggregate monthly
+// Initialize monthly counts again to ensure it's clean for the chart's data
+$monthly_lang_chart_data_counts = array_fill_keys(range(1, 12), 0);
 
-// Fetch recent password reset requests for the table
-$recent_password_resets = [];
-$stmt_recent_resets = $conn->prepare("SELECT pr.expires_at, u.username, pr.email FROM password_resets pr JOIN users u ON pr.email = u.email WHERE pr.expires_at BETWEEN ? AND ? ORDER BY pr.expires_at DESC LIMIT 10");
-if ($stmt_recent_resets) { $stmt_recent_resets->bind_param("ss", $start_date_str, $end_date_str); if ($stmt_recent_resets->execute()) { $result = $stmt_recent_resets->get_result(); if ($result) { while($row = $result->fetch_assoc()) $recent_password_resets[] = $row; } } $stmt_recent_resets->close(); }
+$stmt_langs_chart_data_monthly = $conn->prepare("SELECT MONTH(created_at) as month_num, COUNT(*) as count FROM languages WHERE YEAR(created_at) = ? GROUP BY MONTH(created_at)");
+if ($stmt_langs_chart_data_monthly) {
+    $stmt_langs_chart_data_monthly->bind_param("i", $current_year);
+    if ($stmt_langs_chart_data_monthly->execute()) {
+        $result = $stmt_langs_chart_data_monthly->get_result();
+        if ($result) {
+            while($row = $result->fetch_assoc()) {
+                $month_num = (int)$row['month_num'];
+                if (array_key_exists($month_num, $monthly_lang_chart_data_counts)) {
+                    $monthly_lang_chart_data_counts[$month_num] = $row['count'];
+                }
+            }
+        }
+    }
+    $stmt_langs_chart_data_monthly->close();
+}
 
-// Fetch daily language settings table
-$teacher_daily_lang_settings = [];
-$sql_daily_langs = "SELECT tdl.setting_date, u.username AS teacher_username, l.language_name FROM teacher_daily_languages tdl JOIN users u ON tdl.teacher_id = u.id JOIN languages l ON tdl.language_id = l.id WHERE tdl.setting_date BETWEEN ? AND ? ORDER BY tdl.setting_date DESC, u.username ASC";
-$stmt_daily_langs = $conn->prepare($sql_daily_langs);
-if ($stmt_daily_langs) { $stmt_daily_langs->bind_param("ss", $start_date_query_format, $end_date_query_format); if ($stmt_daily_langs->execute()) { $result = $stmt_daily_langs->get_result(); if ($result) { while ($row = $result->fetch_assoc()) $teacher_daily_lang_settings[] = $row; } } $stmt_daily_langs->close(); }
 
 // --- 5. Prepare Data for JS Charts ---
 $user_pie_data = ['labels' => ['Active', 'Inactive'], 'data' => [$stats['active_users'], $stats['inactive_users']]];
 $device_pie_data = ['labels' => ['Online', 'Offline', 'Error'], 'data' => [$stats['online_devices'], $stats['offline_devices'], $stats['error_devices']]];
 $user_bar_data = ['labels' => $week_labels, 'data' => array_values($week_user_data)];
-$lang_bar_data = ['labels' => $week_labels, 'data' => array_values($week_lang_data)];
+// Languages added chart data (monthly)
+$lang_bar_data = ['labels' => $month_labels, 'data' => array_values($monthly_lang_chart_data_counts)];
 
 
 // --- Include the Standardized Header ---
-// This file will now provide the <DOCTYPE html>, <html>, <head>, <body>, and the initial layout divs.
 include 'header.php';
 ?>
 
-<!--
-    No <head>, <body>, or outer <div>s needed here as they come from header.php.
-    Only page-specific styles or additional head elements should go here if header.php doesn't include them.
-    The <title> tag should ideally be set directly in header.php or via JavaScript on DOMContentLoaded
-    if header.php provides a common title template. For now, it's handled by JS below.
--->
-
 <!-- Page-specific styles -->
 <style>
-    /*
-     * Styles below are kept here for demonstration purposes,
-     * but ideally, all shared styles (like scrollbar, sidebar transitions, flash messages, and common input styles)
-     * should be in a separate CSS file or directly within header.php's <style> block
-     * to avoid duplication and ensure consistency across all pages that include header.php.
-     */
+    /* Standard card and chart styles */
     .stat-card { background-color: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); display: flex; align-items: center; }
     .stat-card i { font-size: 1.75rem; color: #fff; padding: 0.75rem; border-radius: 0.375rem; margin-right: 1rem; width: 50px; height: 50px; display: inline-flex; justify-content: center; align-items: center; }
     .stat-card .value { font-size: 1.875rem; font-weight: 700; color: #111827; }
     .stat-card .label { font-size: 0.875rem; color: #6b7280; }
-    .chart-container { background-color: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); }
-    /* RESTORED: Style for the sidebar toggle icon animation */
-    #sidebarToggle i {
-        transition: transform 0.3s ease-in-out;
+    .chart-container { background-color: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); display: flex; flex-direction: column; align-items: center; justify-content: center; } /* Added flex for center content */
+    #sidebarToggle i { transition: transform 0.3s ease-in-out; }
+
+    /* Styles for status badges in tables */
+    .status-badge {
+        padding: 0.25rem 0.5rem;
+        border-radius: 9999px; /* Full rounded */
+        font-size: 0.75rem; /* text-xs */
+        font-weight: 600; /* font-semibold */
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .status-badge.success { background-color: #d1fae5; color: #065f46; } /* green-100, green-800 */
+    .status-badge.pending { background-color: #fef3c7; color: #92400e; } /* yellow-100, yellow-800 */
+    .status-badge.expired { background-color: #fef3c7; color: #92400e; } /* yellow-100, yellow-800 - using pending for expired for now */
+    .status-badge.failed { background-color: #fee2e2; color: #991b1b; } /* red-100, red-800 */
+
+    /* Styles for the common modal structure (used by delete, success, and logout in header.php) */
+    .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    .modal-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+    .modal-box {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        text-align: center;
+        max-width: 400px;
+        width: 90%;
+        transform: translateY(-20px);
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .modal-overlay.active .modal-box {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    .modal-box .icon-wrapper {
+        background-color: #e2e8f0; /* Gray-200 */
+        color: #4a5568; /* Gray-700 */
+        border-radius: 9999px; /* Full rounded */
+        width: 56px; /* h-14 */
+        height: 56px; /* w-14 */
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem; /* mx-auto mb-6 */
+    }
+    .modal-box .icon-wrapper i {
+        font-size: 2rem; /* text-4xl */
+    }
+    .success-modal .icon-wrapper {
+        background-color: #d1fae5;
+        color: #10b981;
+    }
+    .error-modal .icon-wrapper {
+        background-color: #fee2e2;
+        color: #ef4444;
+    }
+
+    /* Styles for the common search/export/pagination table header */
+    .table-controls-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        flex-wrap: wrap; /* Allow wrapping on smaller screens */
+        gap: 0.5rem; /* Spacing between items */
+    }
+    .table-search-input {
+        flex-grow: 1; /* Allows search input to take available space */
+        max-width: 250px; /* Limit max width for desktop */
+        min-width: 150px; /* Ensure minimum width */
+        padding-left: 2.5rem; /* Space for icon */
+    }
+    .export-button {
+        padding: 0.5rem 1rem;
+        background-color: #4CAF50; /* Green color for export */
+        color: white;
+        border-radius: 0.375rem;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: background-color 0.2s;
+    }
+    .export-button:hover {
+        background-color: #45a049;
+    }
+
+    /* Styles for pagination buttons */
+    .pagination-controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 1rem;
+    }
+    .pagination-numbers button {
+        /* Styles for page number buttons */
+        transition: background-color 0.2s, color 0.2s;
+        border: 1px solid transparent; /* Default transparent border */
+    }
+    /* New styling for active pagination button */
+    .pagination-numbers button.active-page {
+        background-color: #e0f2f7; /* Light blue background */
+        color: #2980b9; /* Blue text */
+        border-color: #a7d9ee; /* Lighter blue border */
+        font-weight: 700;
+    }
+    .prev-page-btn, .next-page-btn {
+        /* Styles for Previous/Next buttons */
+        padding: 0.5rem 1rem; /* More padding */
+        border-radius: 0.5rem; /* More rounded */
+        border: 1px solid #d1d5db;
+        transition: background-color 0.2s, opacity 0.2s;
+        background-color: white;
+        color: #4a5568; /* Text color */
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* Subtle shadow */
+    }
+    .prev-page-btn:hover, .next-page-btn:hover {
+        background-color: #f3f4f6; /* Light gray on hover */
+    }
+    .prev-page-btn:disabled, .next-page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none; /* No shadow when disabled */
     }
 </style>
 
 <!-- MAIN CONTENT AREA -->
 <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
     <div class="container mx-auto">
-        <?php if ($success_message): ?>
-            <div id="successMessage" class="flash-message flash-success flex items-center">
-                <i class="fas fa-check-circle fa-lg mr-3 py-1"></i>
-                <div><p class="font-bold">Success</p><p class="text-sm"><?php echo htmlspecialchars($success_message); ?></p></div>
-            </div>
-        <?php endif; ?>
-        <?php if ($error_message): ?>
-            <div id="errorMessage" class="flash-message flash-error flex items-center">
+        <?php
+        // Display session-based flash messages (from redirects, e.g., edit_language not found)
+        if (isset($_SESSION['error_message']) && !empty($_SESSION['error_message'])) : ?>
+            <div id="sessionErrorMessage" class="flash-message flash-error flex items-center">
                 <i class="fas fa-exclamation-triangle fa-lg mr-3 py-1"></i>
-                <div><p class="font-bold">Error</p><p class="text-sm"><?php echo htmlspecialchars($error_message); ?></p></div>
+                <div><p class="font-bold">Error</p><p class="text-sm"><?php echo htmlspecialchars($_SESSION['error_message']); ?></p></div>
             </div>
-        <?php endif; ?>
+        <?php
+            unset($_SESSION['error_message']); // Clear it after displaying
+        endif;
+        ?>
 
         <!-- Stat Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
@@ -284,48 +551,116 @@ include 'header.php';
         <!-- Bar Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">New Teacher Registrations (Last 7 Days)</h3><canvas id="userWeeklyChart"></canvas></div>
-            <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">Languages Added (Last 7 Days)</h3><canvas id="langWeeklyChart"></canvas></div>
+            <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">Languages Added (<?php echo $current_year; ?>)</h3><canvas id="langWeeklyChart"></canvas></div>
         </div>
         
-        <!-- All Tables -->
+        <!-- All Tables (unified format) -->
         <div class="space-y-6">
+
+            <!-- Recent Language Setups Table -->
             <div class="bg-white p-6 rounded-lg shadow-lg">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Recent Language Setups (Last 7 Days)</h3>
+                <div class="table-controls-header">
+                    <h3 class="text-lg font-semibold text-gray-800">Recent Language Setups</h3>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input type="text" id="languagesSearchInput" placeholder="Search language..." class="block w-full pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm table-search-input">
+                        </div>
+                        <button id="exportLanguages" class="export-button"><i class="fas fa-file-excel"></i>Export</button>
+                    </div>
+                </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added By</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Added</th></tr></thead>
+                    <table id="languagesTable" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Added By</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Added</th>
+                            </tr>
+                        </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <?php if (!empty($languages_by_teacher_week)): foreach ($languages_by_teacher_week as $lang_entry): ?>
-                            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium"><?php echo htmlspecialchars($lang_entry['language_name']); ?></td><td class="px-6 py-4 whitespace-nowrap text-sm"><?php echo htmlspecialchars($lang_entry['username'] ?? 'N/A'); ?></td><td class="px-6 py-4 whitespace-nowrap text-sm"><?php echo htmlspecialchars(date('M d, Y', strtotime($lang_entry['created_at']))); ?></td></tr>
-                            <?php endforeach; else: ?><tr><td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">No languages added in the last 7 days.</td></tr><?php endif; ?>
+                            <!-- Rows will be rendered by JavaScript -->
                         </tbody>
                     </table>
+                    <div class="pagination-controls">
+                        <button class="prev-page-btn" data-table-id="languagesTable">&larr; Previous</button>
+                        <div class="pagination-numbers" data-table-id="languagesTable"></div>
+                        <button class="next-page-btn" data-table-id="languagesTable">Next &rarr;</button>
+                    </div>
                 </div>
             </div>
+
+            <!-- Recent Password Reset Requests Table -->
             <div class="bg-white p-6 rounded-lg shadow-lg">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Recent Password Reset Requests (Last 7 Days)</h3>
+                <div class="table-controls-header">
+                    <h3 class="text-lg font-semibold text-gray-800">Recent Password Reset Requests</h3>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input type="text" id="resetsSearchInput" placeholder="Search user/email..." class="block w-full pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm table-search-input">
+                        </div>
+                        <button id="exportResets" class="export-button"><i class="fas fa-file-excel"></i>Export</button>
+                    </div>
+                </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Request Date</th></tr></thead>
+                    <table id="resetsTable" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Request Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                            </tr>
+                        </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <?php if (!empty($recent_password_resets)): foreach ($recent_password_resets as $reset_entry): ?>
-                            <tr><td class="px-6 py-4 whitespace-nowrap text-sm font-medium"><?php echo htmlspecialchars($reset_entry['username'] ?? 'N/A'); ?></td><td class="px-6 py-4 whitespace-nowrap text-sm"><?php echo htmlspecialchars($reset_entry['email'] ?? 'N/A'); ?></td><td class="px-6 py-4 whitespace-nowrap text-sm"><?php echo htmlspecialchars(date('M d, Y H:i', strtotime($reset_entry['expires_at']))); ?></td></tr>
-                            <?php endforeach; else: ?><tr><td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">No password resets in the last 7 days.</td></tr><?php endif; ?>
+                            <!-- Rows will be rendered by JavaScript -->
                         </tbody>
                     </table>
+                    <div class="pagination-controls">
+                        <button class="prev-page-btn" data-table-id="resetsTable">&larr; Previous</button>
+                        <div class="pagination-numbers" data-table-id="resetsTable"></div>
+                        <button class="next-page-btn" data-table-id="resetsTable">Next &rarr;</button>
+                    </div>
                 </div>
             </div>
+
+            <!-- Daily Language Settings by Teacher Table -->
             <div class="bg-white p-6 rounded-lg shadow-lg">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Daily Language Settings by Teacher (Last 7 Days)</h3>
+                <div class="table-controls-header">
+                    <h3 class="text-lg font-semibold text-gray-800">Daily Language Settings by Teacher</h3>
+                    <div class="flex items-center gap-2">
+                        <div class="relative">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <i class="fas fa-search text-gray-400"></i>
+                            </div>
+                            <input type="text" id="dailyLangsSearchInput" placeholder="Search teacher/language..." class="block w-full pr-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm table-search-input">
+                        </div>
+                        <button id="exportDailyLangs" class="export-button"><i class="fas fa-file-excel"></i>Export</button>
+                    </div>
+                </div>
                 <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Set</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teacher</th><th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th></tr></thead>
+                    <table id="dailyLangsTable" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date Set</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Teacher</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Language</th>
+                            </tr>
+                        </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <?php if (!empty($teacher_daily_lang_settings)): foreach ($teacher_daily_lang_settings as $setting_entry): ?>
-                            <tr><td class="px-6 py-4 whitespace-nowrap text-sm"><?php echo htmlspecialchars(date('M d, Y', strtotime($setting_entry['setting_date']))); ?></td><td class="px-6 py-4 whitespace-nowrap text-sm font-medium"><?php echo htmlspecialchars($setting_entry['teacher_username'] ?? 'N/A'); ?></td><td class="px-6 py-4 whitespace-nowrap text-sm"><?php echo htmlspecialchars($setting_entry['language_name'] ?? 'N/A'); ?></td></tr>
-                            <?php endforeach; else: ?><tr><td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">No daily language settings recorded in the last 7 days.</td></tr><?php endif; ?>
+                            <!-- Rows will be rendered by JavaScript -->
                         </tbody>
                     </table>
+                    <div class="pagination-controls">
+                        <button class="prev-page-btn" data-table-id="dailyLangsTable">&larr; Previous</button>
+                        <div class="pagination-numbers" data-table-id="dailyLangsTable"></div>
+                        <button class="next-page-btn" data-table-id="dailyLangsTable">Next &rarr;</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -336,20 +671,50 @@ include 'header.php';
 </div> <!-- Closes <div class="flex-1 flex flex-col overflow-hidden"> from header.php -->
 </div> <!-- Closes <div class="flex h-screen overflow-hidden"> from header.php -->
 
+<!-- Custom Success Modal HTML -->
+<div id="successModal" class="modal-overlay">
+    <div class="modal-box success-modal">
+        <div class="icon-wrapper">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-3">Success</h3>
+        <p class="text-sm text-gray-500 mb-6" id="successModalMessage">
+            Action is done successfully!
+        </p>
+        <button id="confirmSuccessButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+            Confirm
+        </button>
+    </div>
+</div>
+
+<!-- Custom Error Modal HTML (for immediate errors from POST, not redirects) -->
+<div id="errorModal" class="modal-overlay">
+    <div class="modal-box error-modal">
+        <div class="icon-wrapper">
+            <i class="fas fa-times-circle"></i>
+        </div>
+        <h3 class="text-xl font-bold text-gray-900 mb-3">Error</h3>
+        <p class="text-sm text-gray-500 mb-6" id="errorModalMessage">
+            Something went wrong. Please try again.
+        </p>
+        <button id="confirmErrorButton" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500">
+            Dismiss
+        </button>
+    </div>
+</div>
+
+
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // This script block should contain JavaScript specific to admin_dashboard.php.
-    // The user dropdown JS is now handled entirely within header.php.
-
     // Update the page title in the header h1 (id="page-title" from header.php)
     const pageTitleElement = document.getElementById('page-title');
     if (pageTitleElement) {
-        pageTitleElement.textContent = 'Dashboard Overview'; // Changed to 'Dashboard Overview' for dashboard page
+        pageTitleElement.textContent = 'Dashboard Overview';
     }
     // Update the browser tab title
-    document.title = 'Admin Dashboard Overview'; // Changed title for dashboard page
+    document.title = 'Admin Dashboard Overview';
 
-    // Sidebar toggle logic (kept here as it's common but not directly related to dropdown)
+    // Sidebar toggle logic (kept here for completeness if not moved globally)
     const sidebar = document.getElementById('sidebar');
     const sidebarToggle = document.getElementById('sidebarToggle');
     const mobileSidebarToggle = document.getElementById('mobileSidebarToggle');
@@ -391,27 +756,57 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Flash message auto-hide logic
-    const successAlert = document.getElementById('successMessage');
-    const errorAlert = document.getElementById('errorMessage');
-    function autoHide(el) {
-        if(el) {
-            setTimeout(() => {
-                el.style.opacity = '0';
-                setTimeout(() => el.remove(), 500);
-            }, 4000);
-        }
+    // --- Session-based Error Message Display (from redirects) ---
+    const sessionErrorMessageDiv = document.getElementById('sessionErrorMessage');
+    if (sessionErrorMessageDiv) {
+        setTimeout(() => {
+            sessionErrorMessageDiv.classList.add('fade-out');
+            setTimeout(() => sessionErrorMessageDiv.remove(), 500);
+        }, 4000);
     }
-    autoHide(successAlert);
-    autoHide(errorAlert);
 
-    // If editing, scroll to edit section (if it exists)
-    if (window.location.hash === '#manage-languages') {
-        const manageLanguagesSection = document.getElementById('manage-languages');
-        if (manageLanguagesSection) {
-            manageLanguagesSection.scrollIntoView({ behavior: 'smooth' });
-        }
+    // --- Custom Success/Error Modal Display Logic (for POST actions on current page) ---
+    const successModal = document.getElementById('successModal');
+    const confirmSuccessButton = document.getElementById('confirmSuccessButton');
+    const successModalMessage = document.getElementById('successModalMessage');
+
+    const errorModal = document.getElementById('errorModal');
+    const confirmErrorButton = document.getElementById('confirmErrorButton');
+    const errorModalMessage = document.getElementById('errorModalMessage');
+
+    // PHP variables for success/error messages, passed to JS
+    const phpSuccessMessage = <?php echo json_encode($modal_success_message); ?>;
+    const phpErrorMessage = <?php echo json_encode($modal_error_message); ?>;
+
+    if (phpSuccessMessage) {
+        successModalMessage.textContent = phpSuccessMessage;
+        successModal.classList.add('active');
+    } else if (phpErrorMessage) {
+        errorModalMessage.textContent = phpErrorMessage;
+        errorModal.classList.add('active');
     }
+
+    // Success modal button/overlay click handler
+    confirmSuccessButton.addEventListener('click', () => {
+        successModal.classList.remove('active');
+        window.location.href = window.location.pathname + window.location.search; // Reload to reflect changes
+    });
+    successModal.addEventListener('click', (e) => {
+        if (e.target === successModal) {
+            successModal.classList.remove('active');
+            window.location.href = window.location.pathname + window.location.search;
+        }
+    });
+
+    // Error modal button/overlay click handler
+    confirmErrorButton.addEventListener('click', () => {
+        errorModal.classList.remove('active');
+    });
+    errorModal.addEventListener('click', (e) => {
+        if (e.target === errorModal) {
+            errorModal.classList.remove('active');
+        }
+    });
 
     // --- Chart.js Data from PHP ---
     const userPieData = <?php echo json_encode($user_pie_data); ?>;
@@ -433,7 +828,240 @@ document.addEventListener('DOMContentLoaded', () => {
     if (userWeeklyCtx) { new Chart(userWeeklyCtx, { type: 'bar', data: { labels: userBarData.labels, datasets: [{ label: 'New Users', data: userBarData.data, backgroundColor: '#60A5FA', borderRadius: 4 }] }, options: barOptions }); }
 
     const langWeeklyCtx = document.getElementById('langWeeklyChart');
-    if (langWeeklyCtx) { new Chart(langWeeklyCtx, { type: 'bar', data: { labels: langBarData.labels, datasets: [{ label: 'New Languages', data: langBarData.data, backgroundColor: '#A78BFA', borderRadius: 4 }] }, options: barOptions }); }
+    if (langWeeklyCtx) { new Chart(langWeeklyCtx, { type: 'bar', data: { labels: langBarData.labels, datasets: [{ label: 'New Languages', data: langBarData.data, backgroundColor: [
+        '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9900',
+        '#FF6347', '#6A5ACD', '#DA70D6', '#8A2BE2', '#00CED1', '#FFA07A'
+    ], borderRadius: 4 }] }, options: barOptions }); }
+
+
+    // --- Generic Table Renderer for Client-Side Search and Pagination ---
+    function setupTable(tableId, rawData, columns, itemsPerPage = 5, searchableKeys = [], exportFileName = 'data') {
+        const table = document.getElementById(tableId);
+        if (!table) {
+            console.error(`Table with ID "${tableId}" not found.`);
+            return;
+        }
+        const tbody = table.querySelector('tbody');
+        const searchInput = table.closest('.bg-white').querySelector('.table-search-input');
+        const prevButton = table.closest('.bg-white').querySelector(`.prev-page-btn[data-table-id="${tableId}"]`);
+        const nextButton = table.closest('.bg-white').querySelector(`.next-page-btn[data-table-id="${tableId}"]`);
+        const paginationNumbersDiv = table.closest('.bg-white').querySelector(`.pagination-numbers[data-table-id="${tableId}"]`);
+        const exportButton = table.closest('.bg-white').querySelector('.export-button');
+
+        let currentPage = 1;
+        let filteredData = [...rawData];
+
+        function renderTableRows() {
+            tbody.innerHTML = ''; // Clear existing rows
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedData = filteredData.slice(startIndex, endIndex);
+
+            if (paginatedData.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="${columns.length}" class="px-6 py-4 text-center text-sm text-gray-500">No data found.</td></tr>`;
+                return;
+            }
+
+            paginatedData.forEach(item => {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-50'; // Add hover effect
+                columns.forEach(col => {
+                    const cell = document.createElement('td');
+                    cell.className = 'px-6 py-4 whitespace-nowrap text-sm';
+                    let content = '';
+
+                    if (col.render) { // Custom rendering for complex columns (e.g., icons, statuses)
+                        content = col.render(item);
+                    } else if (item[col.dataKey] !== undefined) {
+                        content = item[col.dataKey];
+                    } else {
+                        content = ''; // Default to empty string if dataKey not found
+                    }
+
+                    if (col.className) { // Apply specific class if provided
+                        cell.className += ` ${col.className}`;
+                    }
+
+                    // Directly set innerHTML for SVG/FontAwesome icons, assuming it's sanitized
+                    if (typeof content === 'string' && (content.includes('<svg') || content.includes('<i class="fas'))) {
+                        cell.innerHTML = content;
+                    } else {
+                        cell.textContent = content; // Use textContent for plain text to prevent XSS
+                    }
+                    row.appendChild(cell);
+                });
+                tbody.appendChild(row);
+            });
+        }
+
+        function renderPaginationControls() {
+            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+            paginationNumbersDiv.innerHTML = ''; // Clear existing page numbers
+
+            // Limit visible page numbers for better UX
+            let startPageNum = Math.max(1, currentPage - 2);
+            let endPageNum = Math.min(totalPages, currentPage + 2);
+
+            if (startPageNum > 1) {
+                const ellipsis = document.createElement('span');
+                ellipsis.textContent = '...';
+                ellipsis.className = 'px-2 py-1 text-gray-700';
+                paginationNumbersDiv.appendChild(ellipsis);
+            }
+
+            for (let i = startPageNum; i <= endPageNum; i++) {
+                const pageButton = document.createElement('button');
+                pageButton.textContent = i;
+                pageButton.className = `px-3 py-1 rounded-md transition-colors ${i === currentPage ? 'active-page' : 'bg-white text-gray-700 hover:bg-gray-200'}`;
+                pageButton.addEventListener('click', () => {
+                    currentPage = i;
+                    renderTableRows();
+                    renderPaginationControls();
+                });
+                paginationNumbersDiv.appendChild(pageButton);
+            }
+
+            if (endPageNum < totalPages) {
+                const ellipsis = document.createElement('span');
+                ellipsis.textContent = '...';
+                ellipsis.className = 'px-2 py-1 text-gray-700';
+                paginationNumbersDiv.appendChild(ellipsis);
+            }
+
+            if (prevButton) {
+                prevButton.disabled = currentPage === 1;
+                prevButton.classList.toggle('opacity-50', currentPage === 1);
+            }
+            if (nextButton) {
+                nextButton.disabled = currentPage === totalPages;
+                nextButton.classList.toggle('opacity-50', currentPage === totalPages);
+            }
+        }
+
+        function applySearchAndRender() {
+            const searchTerm = searchInput.value.toLowerCase();
+            filteredData = rawData.filter(item => {
+                return searchableKeys.some(key => {
+                    const value = item[key];
+                    return value && String(value).toLowerCase().includes(searchTerm);
+                });
+            });
+            currentPage = 1; // Reset to first page on new search
+            renderTableRows();
+            renderPaginationControls();
+        }
+
+        function exportTableToCSV() {
+            let csv = columns.map(col => `"${col.header.replace(/"/g, '""')}"`).join(',') + '\n';
+            filteredData.forEach(item => {
+                let row = columns.map(col => {
+                    let cellData = '';
+                    if (col.exportRender) { // Use exportRender if available for cleaner export data
+                        cellData = col.exportRender(item);
+                    } else if (item[col.dataKey] !== undefined) {
+                        cellData = item[col.dataKey];
+                    }
+                    return `"${String(cellData).replace(/"/g, '""')}"`;
+                }).join(',');
+                csv += row + '\n';
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.setAttribute('download', `${exportFileName}_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+
+        // Event listeners
+        if (searchInput) {
+            searchInput.addEventListener('keyup', applySearchAndRender);
+        }
+        if (prevButton) {
+            prevButton.addEventListener('click', () => {
+                if (currentPage > 1) {
+                    currentPage--;
+                    renderTableRows();
+                    renderPaginationControls();
+                }
+            });
+        }
+        if (nextButton) {
+            nextButton.addEventListener('click', () => {
+                const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+                if (currentPage < totalPages) {
+                    currentPage++;
+                    renderTableRows();
+                    renderPaginationControls();
+                }
+            });
+        }
+        if (exportButton) {
+            exportButton.addEventListener('click', exportTableToCSV);
+        }
+
+        // Initial render
+        renderTableRows();
+        renderPaginationControls();
+    }
+
+
+    // --- Define columns and data for each specific table ---
+
+    // Recent Language Setups Table
+    const languagesColumns = [
+        { header: 'ID', dataKey: 'id', className: 'text-gray-900' },
+        { header: 'Language', dataKey: 'language_name', className: 'font-medium text-gray-900' },
+        { header: 'Added By', dataKey: 'added_by', className: 'text-gray-500' },
+        { header: 'Date Added', dataKey: 'date_added', className: 'text-gray-500',
+          render: (item) => new Date(item.date_added).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+          exportRender: (item) => new Date(item.date_added).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) // For export without AM/PM
+        },
+    ];
+    const phpAllLanguagesData = <?php echo json_encode($all_languages_data); ?>;
+    setupTable('languagesTable', phpAllLanguagesData, languagesColumns, 5, ['language_name', 'added_by'], 'languages_report');
+
+
+    // Recent Password Reset Requests Table
+    const resetsColumns = [
+        { header: 'User', dataKey: 'user', className: 'font-medium text-gray-900' },
+        { header: 'Email', dataKey: 'email', className: 'text-gray-500' },
+        { header: 'Request Date', dataKey: 'request_date', className: 'text-gray-500',
+          render: (item) => new Date(item.request_date).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
+          exportRender: (item) => new Date(item.request_date).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        },
+        {
+            header: 'Status', dataKey: 'status',
+            render: (item) => {
+                let statusClass = '';
+                switch (item.status.toLowerCase()) {
+                    case 'pending': statusClass = 'pending'; break;
+                    case 'expired': statusClass = 'expired'; break; // Assuming 'Expired' can also be a status
+                    default: statusClass = 'bg-gray-100 text-gray-800'; break;
+                }
+                return `<span class="status-badge ${statusClass}">${item.status}</span>`;
+            },
+            exportRender: (item) => item.status // Export plain text status
+        },
+    ];
+    const phpRecentPasswordResetsData = <?php echo json_encode($recent_password_resets_data); ?>;
+    setupTable('resetsTable', phpRecentPasswordResetsData, resetsColumns, 5, ['user', 'email'], 'password_resets_report');
+
+
+    // Daily Language Settings by Teacher Table
+    const dailyLangsColumns = [
+        { header: 'Date Set', dataKey: 'setting_date', className: 'text-gray-500',
+          render: (item) => new Date(item.setting_date).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
+          exportRender: (item) => new Date(item.setting_date).toISOString().slice(0, 10) //YYYY-MM-DD for export
+        },
+        { header: 'Teacher', dataKey: 'teacher_username', className: 'font-medium text-gray-900' },
+        { header: 'Language', dataKey: 'language_name', className: 'text-gray-500' },
+    ];
+    const phpTeacherDailyLangSettingsData = <?php echo json_encode($teacher_daily_lang_settings_data); ?>;
+    setupTable('dailyLangsTable', phpTeacherDailyLangSettingsData, dailyLangsColumns, 5, ['teacher_username', 'language_name'], 'daily_language_settings_report');
 });
 </script>
 

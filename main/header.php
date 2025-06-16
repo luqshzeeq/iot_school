@@ -101,9 +101,9 @@
             opacity: 1;
         }
         .modal-box .icon-wrapper {
-            /* Default icon wrapper style, can be overridden by specific modal types */
-            background-color: #e2e8f0; /* Gray-200 */
-            color: #4a5568; /* Gray-700 */
+            /* Default icon wrapper style, applying the desired consistent blue color */
+            background-color: #e0f2f7; /* Light blue background */
+            color: #2980b9; /* A shade of blue for the icon */
             border-radius: 9999px; /* Full rounded */
             width: 56px; /* h-14 */
             height: 56px; /* w-14 */
@@ -116,13 +116,18 @@
             font-size: 2rem; /* text-4xl */
         }
 
-        /* Specific styles for Logout modal icon */
-        .logout-modal .icon-wrapper {
-            /* Using a combination of colors for the logout icon as per image */
-            background-color: #e0f2f7; /* Light blue background */
-            /* The icon itself could be a custom SVG or combination, using a door icon for now */
-            color: #2980b9; /* A shade of blue for the icon */
+        /* Specific overrides for other modals if needed (e.g., delete modal icon) */
+        /* If you want delete/success icons to have different colors, define them here explicitly: */
+        /*
+        .delete-modal .icon-wrapper {
+            background-color: #fee2e2;
+            color: #ef4444;
         }
+        .success-modal .icon-wrapper {
+            background-color: #d1fae5;
+            color: #10b981;
+        }
+        */
     </style>
 </head>
 <body> <!-- Body tag starts here, closed at the very end of this file -->
@@ -163,7 +168,7 @@
                         <div class="border-t border-gray-200"></div>
                         <div class="py-1">
                             <!-- Change this to a button or span to trigger the modal -->
-                            <a href="#" id="logoutTrigger" class="dropdown-item text-red-600">
+                            <a href="logout_admin.php" id="logoutTrigger" class="dropdown-item text-red-600">
                                 <i class="fas fa-sign-out-alt"></i> Sign out
                             </a>
                         </div>
@@ -190,10 +195,10 @@
             Are you sure?
         </p>
         <div class="flex flex-col space-y-3">
-            <button id="cancelLogoutButton" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                Cancel 
+            <button id="cancelLogoutButton" class="w-full border border-blue-500 py-2 px-4 rounded-md bg-white hover:bg-blue-50 text-blue-600 font-semibold transition duration-150 ease-in-out">
+                Cancel
             </button>
-            <button id="confirmLogoutButton" class="w-full border border-blue-500 py-2 px-4 rounded-md bg-white hover:bg-blue-50 text-blue-600 font-semibold transition duration-150 ease-in-out">
+            <button id="confirmLogoutButton" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded-md transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
                 Sign out
             </button>
         </div>
