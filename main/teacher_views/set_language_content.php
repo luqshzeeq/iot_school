@@ -1,10 +1,91 @@
 <?php
-
+// Assuming session_start() and db_connection.php are included higher up
 // Fallbacks and sanitization for expected variables
 $selected_date_str_display = isset($selected_date_str) ? htmlspecialchars($selected_date_str) : date('Y-m-d');
 $available_languages_list = is_array($available_languages ?? null) ? $available_languages : [];
-$current_lang_id = $current_language_for_selected_date_id ?? '';
+$current_lang_id = ''; // Initialize, will fetch the global language for the selected date
 
+// Assuming $conn is available from an include, and $_SESSION['user_id'] is the logged-in teacher
+
+// Fetch the globally set language for the selected date
+if (isset($conn)) {
+    $stmt = $conn->prepare("SELECT language_id FROM teacher_daily_languages WHERE setting_date = ?");
+    if ($stmt) {
+        $stmt->bind_param("s", $selected_date_str_display);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($row = $result->fetch_assoc()) {
+            $current_lang_id = $row['language_id'];
+        }
+        $stmt->close();
+    }
+}
+
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['set_language_action'])) {
+    if (!isset($_SESSION['user_id'])) {
+        // Handle not logged in error - redirect or show message
+        $_SESSION['error_message'] = "You must be logged in to set the language.";
+        // Optionally redirect
+        header("Location: teacher_dashboard.php");
+        exit();
+    }
+
+    $teacher_id = $_SESSION['user_id']; // The ID of the teacher who is setting it
+    $setting_date = trim($_POST['setting_date'] ?? '');
+    $language_id = filter_var($_POST['language_id'] ?? '', FILTER_VALIDATE_INT);
+
+    if (empty($setting_date) || $language_id === false || $language_id <= 0) {
+        $_SESSION['error_message'] = "Invalid date or language selected.";
+        header("Location: teacher_dashboard.php?page=set_language&selected_date_str=" . urlencode($setting_date));
+        exit();
+    }
+
+    // Check if an entry for this date already exists
+    $stmt_check = $conn->prepare("SELECT COUNT(*) FROM teacher_daily_languages WHERE setting_date = ?");
+    if ($stmt_check) {
+        $stmt_check->bind_param("s", $setting_date);
+        $stmt_check->execute();
+        $stmt_check->bind_result($count);
+        $stmt_check->fetch();
+        $stmt_check->close();
+
+        if ($count > 0) {
+            // Update existing entry for this date
+            $stmt = $conn->prepare("UPDATE teacher_daily_languages SET language_id = ?, set_by_teacher_id = ? WHERE setting_date = ?");
+            if ($stmt) {
+                $stmt->bind_param("iis", $language_id, $teacher_id, $setting_date);
+            }
+        } else {
+            // Insert new entry
+            $stmt = $conn->prepare("INSERT INTO teacher_daily_languages (setting_date, language_id, set_by_teacher_id) VALUES (?, ?, ?)");
+            if ($stmt) {
+                $stmt->bind_param("sii", $setting_date, $language_id, $teacher_id);
+            }
+        }
+
+        if ($stmt) {
+            if ($stmt->execute()) {
+                $_SESSION['language_set_success'] = true;
+                // Reload current page with the selected date to show update
+                header("Location: teacher_dashboard.php?page=set_language&selected_date_str=" . urlencode($setting_date));
+                exit();
+            } else {
+                $_SESSION['error_message'] = "Error setting language: " . $stmt->error;
+            }
+            $stmt->close();
+        } else {
+            $_SESSION['error_message'] = "Database statement preparation failed: " . $conn->error;
+        }
+    } else {
+        $_SESSION['error_message'] = "Database check statement preparation failed: " . $conn->error;
+    }
+
+    // If an error occurred, redirect with the error message
+    header("Location: teacher_dashboard.php?page=set_language&selected_date_str=" . urlencode($setting_date));
+    exit();
+}
+
+// ... rest of your HTML form (remains largely the same)
 ?>
 
 <div>
@@ -31,58 +112,58 @@ $current_lang_id = $current_language_for_selected_date_id ?? '';
     </div>
 
     <div class="card bg-white shadow-md rounded-lg overflow-hidden mb-6"> <div class="card-header bg-gray-50 px-6 py-4 border-b border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-800">Set Language of the Day</h3>
-        </div>
-        <div class="card-body p-6 md:p-8 w-full">
-            <form method="POST" action="teacher_dashboard.php?page=set_language" id="dailyLanguageForm">
-                <input type="hidden" name="set_language_action" value="1">
-                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token ?? ''); ?>">
+                <h3 class="text-xl font-semibold text-gray-800">Set Language of the Day</h3>
+            </div>
+            <div class="card-body p-6 md:p-8 w-full">
+                <form method="POST" action="teacher_dashboard.php?page=set_language" id="dailyLanguageForm">
+                    <input type="hidden" name="set_language_action" value="1">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token ?? ''); ?>">
 
-                <div class="mb-6">
-                    <label for="setting_date_picker" class="block text-sm font-medium text-gray-700 mb-2">Select Date:</label>
-                    <input type="date" id="setting_date_picker" name="setting_date"
-                            value="<?php echo $selected_date_str_display; ?>"
-                            class="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg shadow-sm
-                                   focus:ring-blue-500 focus:border-blue-500 text-base"
-                            required>
-                </div>
+                    <div class="mb-6">
+                        <label for="setting_date_picker" class="block text-sm font-medium text-gray-700 mb-2">Select Date:</label>
+                        <input type="date" id="setting_date_picker" name="setting_date"
+                                value="<?php echo $selected_date_str_display; ?>"
+                                class="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg shadow-sm
+                                        focus:ring-blue-500 focus:border-blue-500 text-base"
+                                required>
+                    </div>
 
-                <div class="mb-6">
-                    <label for="languageSelectPage" class="block text-sm font-medium text-gray-700 mb-2">
-                        Select Language for <span id="selectedDateDisplay" class="font-semibold text-blue-700"><?php echo $selected_date_str_display; ?></span>:
-                    </label>
-                    <select id="languageSelectPage" name="language_id"
-                            class="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg shadow-sm
-                                   focus:ring-blue-500 focus:border-blue-500 text-base"
-                            required
-                            <?php echo empty($available_languages_list) ? 'disabled' : ''; ?>
-                    >
-                        <option value="">-- Choose a Language --</option>
-                        <?php if (!empty($available_languages_list)): ?>
-                            <?php foreach ($available_languages_list as $lang): ?>
-                                <option value="<?php echo htmlspecialchars($lang['id']); ?>"
-                                        <?php echo ((string)$current_lang_id === (string)$lang['id']) ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($lang['language_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <option value="" disabled>No languages available. Please add them via Admin panel.</option>
+                    <div class="mb-6">
+                        <label for="languageSelectPage" class="block text-sm font-medium text-gray-700 mb-2">
+                            Select Language for <span id="selectedDateDisplay" class="font-semibold text-blue-700"><?php echo $selected_date_str_display; ?></span>:
+                        </label>
+                        <select id="languageSelectPage" name="language_id"
+                                class="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg shadow-sm
+                                        focus:ring-blue-500 focus:border-blue-500 text-base"
+                                required
+                                <?php echo empty($available_languages_list) ? 'disabled' : ''; ?>
+                        >
+                            <option value="">-- Choose a Language --</option>
+                            <?php if (!empty($available_languages_list)): ?>
+                                <?php foreach ($available_languages_list as $lang): ?>
+                                    <option value="<?php echo htmlspecialchars($lang['id']); ?>"
+                                            <?php echo ((string)$current_lang_id === (string)$lang['id']) ? 'selected' : ''; ?>>
+                                        <?php echo htmlspecialchars($lang['language_name']); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <option value="" disabled>No languages available. Please add them via Admin panel.</option>
+                            <?php endif; ?>
+                        </select>
+                        <?php if (empty($available_languages_list)): ?>
+                            <p class="mt-2 text-sm text-red-600">
+                                No languages are configured. Please add languages in your admin settings.
+                            </p>
                         <?php endif; ?>
-                    </select>
-                    <?php if (empty($available_languages_list)): ?>
-                        <p class="mt-2 text-sm text-red-600">
-                            No languages are configured. Please add languages in your admin settings.
-                        </p>
-                    <?php endif; ?>
-                </div>
+                    </div>
 
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg text-base
-                                             transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
-                                             flex items-center justify-center">
-                    <i class="fas fa-save mr-2"></i>Select
-                </button>
-            </form>
-        </div>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg text-base
+                                                 transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
+                                                 flex items-center justify-center">
+                        <i class="fas fa-save mr-2"></i>Select
+                    </button>
+                </form>
+            </div>
     </div>
 
     <div class="bg-blue-50 border-l-4 border-blue-400 text-blue-800 p-4 rounded-md shadow-sm" role="alert">
@@ -97,13 +178,13 @@ $current_lang_id = $current_language_for_selected_date_id ?? '';
                 <ul class="list-disc list-inside text-sm space-y-1">
                     <li>Use this form to set the language for a specific day.</li>
                     <li>You can select any past, current, or future date.</li>
-                    <li><strong>For any given day, each teacher can set only ONE language.</strong> If you set a language for a date that already has one, it will be updated to your new selection.</li>
+                    <li><strong>For any given day, only ONE language can be set globally.</strong> If you set a language for a date that already has one, it will be updated to your new selection.</li>
                     <li>The currently selected language for the chosen date is displayed below the "Select Language for..." label.</li>
                 </ul>
             </div>
         </div>
     </div>
-    </div>
+</div>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
@@ -166,8 +247,12 @@ $current_lang_id = $current_language_for_selected_date_id ?? '';
             // Update the form action to reflect the newly selected date for proper context
             const form = document.getElementById('dailyLanguageForm');
             const url = new URL(form.action);
-            url.searchParams.set('setting_date', this.value);
+            url.searchParams.set('selected_date_str', this.value); // Use 'selected_date_str' for GET param
             form.action = url.toString();
+
+            // Perform an AJAX request or redirect to load the language for the new date
+            // For simplicity, a page reload is used here, matching the initial load logic
+            window.location.href = `teacher_dashboard.php?page=set_language&selected_date_str=${this.value}`;
         });
 
         // Ensure the initial date display matches the picker if coming from query param

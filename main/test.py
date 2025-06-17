@@ -4,25 +4,25 @@ from playsound import playsound
 from datetime import datetime
 import csv
 from lingua import Language, LanguageDetectorBuilder
-import mysql.connector # Added for MySQL database interaction
-import os # Added for playing sound and removing the file
+import mysql.connector
+import os
+# sys module is no longer needed if no command-line arguments are passed
+# import sys
 
 # ===== DATABASE CONFIGURATION =====
 DB_CONFIG = {
-    'host': '127.0.0.1', # Your database host
-    'user': 'root',      # Your database username
-    'password': '',      # Your database password
-    'database': 'language_monitor' # Your database name
+    'host': '127.0.0.1',
+    'user': 'root',
+    'password': '',
+    'database': 'language_monitor'
 }
 
-# For demonstration, assuming a teacher_id. In a real app, this would come from authentication.
-DEMO_TEACHER_ID = 1
+# No longer need to get TEACHER_ID from command line or hardcode
+# TEACHER_ID = 1 # This line is removed
 
 # ===== CONFIGURATION =====
 
-# Expected phrases per language
-# NOTE: These are still used for fallback matching, but the target language
-# itself will now be dynamically fetched from the database.
+# Expected phrases per language (remains unchanged)
 expected_phrases = {
     'MALAY': [
         "makcik nak order nasi lemak dan teh ais",
@@ -46,23 +46,23 @@ expected_phrases = {
     ]
 }
 
-# Google Speech API language codes
+# Google Speech API language codes (remains unchanged)
 speech_lang_code = {
     'ENGLISH': 'en-US',
     'MALAY': 'ms-MY',
-    'CHINESE': 'zh-CN', # Simplified Chinese
+    'CHINESE': 'zh-CN',
     'TAMIL': 'ta-IN'
 }
 
-# Map database language names to internal keys
+# Map database language names to internal keys (remains unchanged)
 DB_LANG_TO_INTERNAL_KEY = {
     'Bahasa Melayu': 'MALAY',
     'English': 'ENGLISH',
     'Mandarin': 'CHINESE',
-    'Tamil': 'TAMIL' # Assuming 'Tamil' will be added to your languages table
+    'Tamil': 'TAMIL'
 }
 
-# Setup language detection (lingua)
+# Setup language detection (lingua) (remains unchanged)
 language_map = {
     'ENGLISH': Language.ENGLISH,
     'MALAY': Language.MALAY,
@@ -71,7 +71,7 @@ language_map = {
 }
 detector = LanguageDetectorBuilder.from_languages(*language_map.values()).build()
 
-# Helper function to play sound and clean up
+# Helper function to play sound and clean up (remains unchanged)
 def play_feedback_sound(text, lang='en'):
     """Generates and plays an audio feedback, then cleans up the audio file."""
     try:
@@ -94,9 +94,10 @@ def get_db_connection():
         print(f"Error connecting to database: {err}")
         return None
 
-def get_language_of_day_from_db(teacher_id, date_str):
+# MODIFIED: Removed teacher_id parameter
+def get_language_of_day_from_db(date_str):
     """
-    Fetches the language set for a specific teacher on a given date from the database.
+    Fetches the global language set for a given date from the database.
     Returns (language_id, internal_language_key) or (None, None) if not found.
     """
     conn = get_db_connection()
@@ -109,41 +110,24 @@ def get_language_of_day_from_db(teacher_id, date_str):
     internal_lang_key = None
 
     try:
-        # First, try to get the specific language set for the day
+        # Query the modified teacher_daily_languages table based only on date
         query = """
         SELECT tdl.language_id, l.language_name
         FROM teacher_daily_languages tdl
         JOIN languages l ON tdl.language_id = l.id
-        WHERE tdl.teacher_id = %s AND tdl.setting_date = %s
+        WHERE tdl.setting_date = %s
         LIMIT 1
         """
-        cursor.execute(query, (teacher_id, date_str))
+        cursor.execute(query, (date_str,)) # Only date_str is passed
         result = cursor.fetchone()
 
         if result:
             target_language_id = result['language_id']
             target_language_name = result['language_name']
             internal_lang_key = DB_LANG_TO_INTERNAL_KEY.get(target_language_name)
-            print(f"✅ Found daily language setting for Teacher {teacher_id} on {date_str}: {target_language_name} (ID: {target_language_id})")
+            print(f"✅ Found global daily language setting for {date_str}: {target_language_name} (ID: {target_language_id})")
         else:
-            # Fallback: get the default language from teacher_settings if no daily setting
-            print(f"No specific daily language setting for Teacher {teacher_id} on {date_str}. Checking default settings...")
-            query = """
-            SELECT ts.language_id, l.language_name
-            FROM teacher_settings ts
-            JOIN languages l ON ts.language_id = l.id
-            WHERE ts.teacher_id = %s
-            LIMIT 1
-            """
-            cursor.execute(query, (teacher_id,))
-            result = cursor.fetchone()
-            if result:
-                target_language_id = result['language_id']
-                target_language_name = result['language_name']
-                internal_lang_key = DB_LANG_TO_INTERNAL_KEY.get(target_language_name)
-                print(f"✅ Found default language setting for Teacher {teacher_id}: {target_language_name} (ID: {target_language_id})")
-            else:
-                print(f"❌ No language setting found for Teacher {teacher_id}.")
+            print(f"❌ No global language setting found for {date_str}.")
 
     except mysql.connector.Error as err:
         print(f"Error fetching language of the day: {err}")
@@ -152,7 +136,8 @@ def get_language_of_day_from_db(teacher_id, date_str):
         conn.close()
     return target_language_id, internal_lang_key
 
-def log_language_usage_to_db(teacher_id, language_id, detected_lang_str, status, transcribed_text):
+# MODIFIED: Removed teacher_id parameter
+def log_language_usage_to_db(language_id, detected_lang_str, status, transcribed_text):
     """Logs the language usage details to the language_usage table."""
     conn = get_db_connection()
     if not conn:
@@ -164,11 +149,12 @@ def log_language_usage_to_db(teacher_id, language_id, detected_lang_str, status,
         # Ensure 'status' is either 'correct' or 'incorrect' as per ENUM definition
         status_enum = 'correct' if status == 'Correct' or status == 'Correct (Fallback)' else 'incorrect'
 
+        # MODIFIED: Removed teacher_id from INSERT query
         query = """
-        INSERT INTO language_usage (teacher_id, language_id, usage_date, detected_language, status, timestamp)
-        VALUES (%s, %s, %s, %s, %s, NOW())
+        INSERT INTO language_usage (language_id, usage_date, detected_language, status, timestamp)
+        VALUES (%s, %s, %s, %s, NOW())
         """
-        cursor.execute(query, (teacher_id, language_id, current_date, detected_lang_str, status_enum))
+        cursor.execute(query, (language_id, current_date, detected_lang_str, status_enum))
         conn.commit()
         print("✅ Language usage logged to database.")
     except mysql.connector.Error as err:
@@ -180,8 +166,8 @@ def log_language_usage_to_db(teacher_id, language_id, detected_lang_str, status,
 # ===== START PROCESS =====
 current_date_str = datetime.now().strftime("%Y-%m-%d")
 
-# Fetch target language from database
-target_language_id, target_language_internal_key = get_language_of_day_from_db(DEMO_TEACHER_ID, current_date_str)
+# MODIFIED: No longer passing teacher_id
+target_language_id, target_language_internal_key = get_language_of_day_from_db(current_date_str)
 
 if not target_language_internal_key:
     print("❌ Could not determine target language from database. Exiting.")
@@ -191,46 +177,46 @@ if not target_language_internal_key:
 print(f"📅 Today is {datetime.now().strftime('%A')}, {current_date_str}. Expected language: {target_language_internal_key.capitalize()}")
 print("🎤 Please speak your order...")
 
-# Start mic
+# Start mic (remains unchanged)
 recognizer = sr.Recognizer()
 with sr.Microphone() as source:
     recognizer.adjust_for_ambient_noise(source, duration=1)
     print("🎧 Listening...")
     audio = recognizer.listen(source)
 
-user_text = "" # Initialize user_text outside try block
+user_text = ""
 
 try:
-    # Transcribe audio using the speech code for the detected target language
+    # Transcribe audio using the speech code for the detected target language (remains unchanged)
     transcribed_text = recognizer.recognize_google(audio, language=speech_lang_code[target_language_internal_key])
     print(f"📝 Transcribed: {transcribed_text}")
     user_text = transcribed_text.lower().strip()
 
-    # Step 1: AI detect language using Lingua
+    # Step 1: AI detect language using Lingua (remains unchanged)
     detected_lingua_lang = detector.detect_language_of(user_text)
     detected_lang_name = detected_lingua_lang.name.upper() if detected_lingua_lang else "UNKNOWN"
     print(f"🌍 Detected language (Lingua): {detected_lang_name}")
 
     feedback = ""
-    result = "Wrong" # Default result
+    result = "Wrong"
 
-    # Step 2: AI match - Lingua detected language matches the target
+    # Step 2: AI match - Lingua detected language matches the target (remains unchanged)
     if detected_lang_name == target_language_internal_key:
         feedback = f"✅ Correct! You spoke in {target_language_internal_key.capitalize()}."
         result = "Correct"
-    # Step 3: Fallback - expected phrase match in the target language
+    # Step 3: Fallback - expected phrase match in the target language (remains unchanged)
     elif any(phrase.lower() in user_text for phrase in expected_phrases.get(target_language_internal_key, [])):
         feedback = f"✅ Acceptable phrase in {target_language_internal_key.capitalize()}."
         result = "Correct (Fallback)"
-    # Step 4: Fail
+    # Step 4: Fail (remains unchanged)
     else:
         feedback = f"❌ Wrong language. Please speak in {target_language_internal_key.capitalize()}."
         result = "Wrong"
 
-    # Audio response
+    # Audio response (remains unchanged)
     play_feedback_sound(feedback, lang='en')
 
-    # Logging to CSV (existing functionality)
+    # Logging to CSV (existing functionality) (remains unchanged)
     now = datetime.now()
     with open("canteen_log.csv", mode='a', newline='', encoding='utf-8') as file:
         writer = csv.writer(file)
@@ -244,25 +230,26 @@ try:
         ])
     print("✅ Logged to canteen_log.csv")
 
-    # Logging to MySQL (new functionality)
-    log_language_usage_to_db(DEMO_TEACHER_ID, target_language_id, detected_lang_name, result, transcribed_text)
+    # Logging to MySQL (new functionality) - MODIFIED: No longer passing teacher_id
+    log_language_usage_to_db(target_language_id, detected_lang_name, result, transcribed_text)
 
 except sr.UnknownValueError:
     print("❌ Could not understand audio.")
     feedback = f"Sorry, I couldn’t understand. Please try again in {target_language_internal_key.capitalize()}."
     play_feedback_sound(feedback, lang='en')
-    # Log 'Unknown' detection to DB
-    log_language_usage_to_db(DEMO_TEACHER_ID, target_language_id, "UNKNOWN", "Wrong", "Could not understand audio")
+    # Log 'Unknown' detection to DB - MODIFIED: No longer passing teacher_id
+    log_language_usage_to_db(target_language_id, "UNKNOWN", "Wrong", "Could not understand audio")
 
 except sr.RequestError as e:
     print(f"❌ Could not request results from Google Speech Recognition service; {e}")
     feedback = "Speech recognition service error. Please check your internet connection."
     play_feedback_sound(feedback, lang='en')
-    log_language_usage_to_db(DEMO_TEACHER_ID, target_language_id, "ERROR", "Wrong", f"Speech Recognition Error: {e}")
+    # Log error - MODIFIED: No longer passing teacher_id
+    log_language_usage_to_db(target_language_id, "ERROR", "Wrong", f"Speech Recognition Error: {e}")
 
 except Exception as e:
     print(f"❌ Error: {e}")
     feedback = "An unexpected error occurred. Please try again."
     play_feedback_sound(feedback, lang='en')
-    log_language_usage_to_db(DEMO_TEACHER_ID, target_language_id, "ERROR", "Wrong", f"Unexpected Error: {e}")
-
+    # Log error - MODIFIED: No longer passing teacher_id
+    log_language_usage_to_db(target_language_id, "ERROR", "Wrong", f"Unexpected Error: {e}")

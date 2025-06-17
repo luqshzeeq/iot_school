@@ -1,6 +1,16 @@
 <?php
 session_start();
-include 'db_connection.php'; // Ensure this path is correct for your database connection
+// Include your database connection file. Adjust the path if necessary.
+include 'db_connection.php'; 
+
+// Ensure database connection is successful
+if (!$conn) {
+    // In a real application, you might log this error and show a user-friendly message.
+    error_log("Database connection failed in teacher_dashboard.php: " . mysqli_connect_error());
+    $_SESSION['error_message'] = "Database connection error. Please try again later.";
+    header("Location: index.php"); // Redirect to login or an error page
+    exit();
+}
 
 // Redirect if user is not logged in or is not a teacher
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'teacher') {
@@ -17,8 +27,8 @@ $language_error = $_SESSION['language_error'] ?? '';
 $profile_update_success = $_SESSION['profile_update_success'] ?? '';
 $profile_update_errors = $_SESSION['profile_update_errors'] ?? [];
 
-// UNSET language_error if it has been read, to prevent it from persisting on refresh
-// NOTE: language_set_success is managed within set_language_content.php for modal display.
+// UNSET session flags to prevent them from persisting on refresh
+// NOTE: language_set_success is specifically handled in set_language_content.php for its modal.
 unset($_SESSION['language_error'], $_SESSION['profile_update_success'], $_SESSION['profile_update_errors']);
 
 
@@ -38,61 +48,64 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_language_action']
         exit();
     }
 
-    $setting_date = $_POST['setting_date'] ?? '';
-    $language_id = $_POST['language_id'] ?? '';
+    $setting_date = trim($_POST['setting_date'] ?? '');
+    $language_id = filter_var($_POST['language_id'] ?? '', FILTER_VALIDATE_INT);
+    // $teacher_id is already set at the top from $_SESSION['user_id']
+    // This $teacher_id will be saved as set_by_teacher_id
 
     // Basic input validation
-    if (empty($setting_date) || empty($language_id) || !preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $setting_date)) {
+    if (empty($setting_date) || $language_id === false || $language_id <= 0 || !preg_match("/^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[1-2][0-9]|3[0-1])$/", $setting_date)) {
         $_SESSION['language_error'] = "Invalid date or language selected.";
         header("Location: teacher_dashboard.php?page=set_language&setting_date=" . urlencode($setting_date));
         exit();
     }
 
-    // Check if a language is already set for this date for this teacher
-    $sql_check = "SELECT teacher_id FROM teacher_daily_languages WHERE teacher_id = ? AND setting_date = ?";
-    $stmt_check = $conn->prepare($sql_check);
-
+    // Check if an entry for this date already exists (NOW GLOBAL CHECK, NOT teacher-specific)
+    $stmt_check = $conn->prepare("SELECT COUNT(*) FROM teacher_daily_languages WHERE setting_date = ?");
     if ($stmt_check) {
-        $stmt_check->bind_param("is", $teacher_id, $setting_date);
+        $stmt_check->bind_param("s", $setting_date);
         $stmt_check->execute();
-        $result_check = $stmt_check->get_result();
+        $stmt_check->bind_result($count);
+        $stmt_check->fetch();
+        $stmt_check->close();
 
-        if ($row_check = $result_check->fetch_assoc()) {
-            // If a record exists, update the language_id.
-            $sql_update = "UPDATE teacher_daily_languages SET language_id = ? WHERE teacher_id = ? AND setting_date = ?";
-            $stmt_update = $conn->prepare($sql_update);
-            if ($stmt_update) {
-                $stmt_update->bind_param("iis", $language_id, $teacher_id, $setting_date);
-                if ($stmt_update->execute()) {
-                    // Set a specific session flag for the modal to pick up
-                    $_SESSION['language_set_success'] = true; // THIS IS THE KEY CHANGE
-                } else {
-                    $_SESSION['language_error'] = "Failed to update daily language: " . $stmt_update->error;
-                }
-                $stmt_update->close();
-            } else {
-                $_SESSION['language_error'] = "Database error (update prepare): " . $conn->error;
+        if ($count > 0) {
+            // Update existing entry for this date (GLOBAL update)
+            // This query is updated to match your new schema (setting_date as PK, set_by_teacher_id as column)
+            $sql_update = "UPDATE teacher_daily_languages SET language_id = ?, set_by_teacher_id = ? WHERE setting_date = ?";
+            $stmt = $conn->prepare($sql_update);
+            if ($stmt) {
+                // Binding: (int)language_id, (int)teacher_id, (string)setting_date
+                $stmt->bind_param("iis", $language_id, $teacher_id, $setting_date);
             }
         } else {
-            // If no record exists, insert a new one.
-            $sql_insert = "INSERT INTO teacher_daily_languages (teacher_id, setting_date, language_id) VALUES (?, ?, ?)";
-            $stmt_insert = $conn->prepare($sql_insert);
-            if ($stmt_insert) {
-                $stmt_insert->bind_param("isi", $teacher_id, $setting_date, $language_id);
-                if ($stmt_insert->execute()) {
-                    // Set a specific session flag for the modal to pick up
-                    $_SESSION['language_set_success'] = true; // THIS IS THE KEY CHANGE
-                } else {
-                    $_SESSION['language_error'] = "Failed to set daily language: " . $stmt_insert->error;
-                }
-                $stmt_insert->close();
-            } else {
-                $_SESSION['language_error'] = "Database error (insert prepare): " . $conn->error;
+            // Insert new entry (GLOBAL insert)
+            // This query is updated to match your new schema
+            $sql_insert = "INSERT INTO teacher_daily_languages (setting_date, language_id, set_by_teacher_id) VALUES (?, ?, ?)";
+            $stmt = $conn->prepare($sql_insert);
+            if ($stmt) {
+                // Binding: (string)setting_date, (int)language_id, (int)teacher_id
+                $stmt->bind_param("sii", $setting_date, $language_id, $teacher_id);
             }
         }
-        $stmt_check->close();
+
+        if ($stmt) {
+            if ($stmt->execute()) {
+                $_SESSION['language_set_success'] = true;
+            } else {
+                // This will catch the foreign key error if $teacher_id doesn't exist in users table
+                // Or if there's any other database error during insert/update.
+                $_SESSION['language_error'] = "Failed to set daily language: " . $stmt->error;
+                error_log("DB Error setting daily language (teacher_id: $teacher_id, date: $setting_date, lang_id: $language_id): " . $stmt->error);
+            }
+            $stmt->close();
+        } else {
+            $_SESSION['language_error'] = "Database statement preparation failed: " . $conn->error;
+            error_log("DB Prepare Error setting daily language: " . $conn->error);
+        }
     } else {
-        $_SESSION['language_error'] = "Database error (check prepare): " . $conn->error;
+        $_SESSION['language_error'] = "Database check statement preparation failed: " . $conn->error;
+        error_log("DB Check Prepare Error setting daily language: " . $conn->error);
     }
 
     // Redirect back to the set_language page for the selected date to show feedback
@@ -100,6 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['set_language_action']
     exit();
 }
 // --- END: POST handling for setting daily language ---
+
 
 // Initialize teacher profile variables with defaults
 $teacher_username = "Teacher";
@@ -164,14 +178,15 @@ $current_language_for_selected_date_id = ''; // Default ID for set_language page
 $date_to_fetch_language_for = ($page === 'dashboard' || $page === 'profile') ? date('Y-m-d') : $selected_date_str;
 $display_date_str_for_language = htmlspecialchars($date_to_fetch_language_for); // Used for date string in display
 
-// Fetch current language setting for the determined date
+// --- START: CORRECTED Fetch current language setting for the determined date (GLOBAL fetch) ---
 $sql_current_setting = "SELECT l.id, l.language_name
-                            FROM teacher_daily_languages tdl
-                            JOIN languages l ON tdl.language_id = l.id
-                            WHERE tdl.teacher_id = ? AND tdl.setting_date = ?";
+                             FROM teacher_daily_languages tdl
+                             JOIN languages l ON tdl.language_id = l.id
+                             WHERE tdl.setting_date = ?"; // REMOVED tdl.teacher_id = ?
 $stmt_fetch_lang = $conn->prepare($sql_current_setting);
 if ($stmt_fetch_lang) {
-    $stmt_fetch_lang->bind_param("is", $teacher_id, $date_to_fetch_language_for);
+    // Only bind the date, as it's a global lookup now
+    $stmt_fetch_lang->bind_param("s", $date_to_fetch_language_for);
     if ($stmt_fetch_lang->execute()) {
         $result_current_setting = $stmt_fetch_lang->get_result();
         if ($row_current = $result_current_setting->fetch_assoc()) {
@@ -189,9 +204,18 @@ if ($stmt_fetch_lang) {
                 $current_language_name_for_selected_date_display = "Not Set for " . $display_date_str_for_language;
             }
         }
+    } else {
+        error_log("Error executing current language fetch: " . $stmt_fetch_lang->error);
+        // Fallback message in case of DB execution error
+        $current_language_name_for_selected_date_display = "Error fetching language.";
     }
     $stmt_fetch_lang->close();
+} else {
+    error_log("Error preparing current language fetch statement: " . $conn->error);
+    // Fallback message in case of DB prepare error
+    $current_language_name_for_selected_date_display = "Error preparing language fetch.";
 }
+// --- END: CORRECTED Fetch current language setting ---
 
 // --- Fetch all available languages (used for dropdowns and chart data processing) ---
 $available_languages = [];
@@ -213,10 +237,13 @@ $total_languages = count($available_languages);
 $days_set_this_month = 0;
 $current_month_start = date('Y-m-01');
 $current_month_end = date('Y-m-t');
-$sql_days_set = "SELECT COUNT(DISTINCT setting_date) as count FROM teacher_daily_languages WHERE teacher_id = ? AND setting_date BETWEEN ? AND ?";
+// This query still makes sense with the new schema if you want to count
+// how many unique days have a language set globally this month.
+// If you still want to tie it to the teacher who set it, you'd add back WHERE set_by_teacher_id = ?
+$sql_days_set = "SELECT COUNT(DISTINCT setting_date) as count FROM teacher_daily_languages WHERE setting_date BETWEEN ? AND ?";
 $stmt_days_set = $conn->prepare($sql_days_set);
 if($stmt_days_set) {
-    $stmt_days_set->bind_param("iss", $teacher_id, $current_month_start, $current_month_end);
+    $stmt_days_set->bind_param("ss", $current_month_start, $current_month_end);
     if($stmt_days_set->execute()){
         $result_days_set = $stmt_days_set->get_result();
         if($row_days_set = $result_days_set->fetch_assoc()){
@@ -242,15 +269,16 @@ $today_dt->modify('+4 days'); // Move to Friday
 $week_end = $today_dt->format('Y-m-d');
 
 // Fetch language settings for the current week (Monday to Friday)
+// This query must also be global if the daily language is global
 $sql_chart_data = "SELECT tdl.setting_date, l.language_name
                    FROM teacher_daily_languages tdl
                    JOIN languages l ON tdl.language_id = l.id
-                   WHERE tdl.teacher_id = ? AND tdl.setting_date BETWEEN ? AND ?
+                   WHERE tdl.setting_date BETWEEN ? AND ?
                    ORDER BY tdl.setting_date ASC";
 
 $stmt_chart_data = $conn->prepare($sql_chart_data);
 if ($stmt_chart_data) {
-    $stmt_chart_data->bind_param("iss", $teacher_id, $week_start, $week_end);
+    $stmt_chart_data->bind_param("ss", $week_start, $week_end); // No teacher_id here
     if ($stmt_chart_data->execute()) {
         $result_chart_data = $stmt_chart_data->get_result();
         while ($row = $result_chart_data->fetch_assoc()) {
@@ -617,13 +645,13 @@ $chart_labels_json = json_encode($chart_labels);
                 <button id="menuButton" class="text-gray-600 focus:outline-none md:hidden mr-4">
                     <i class="fas fa-bars text-xl"></i>
                 </button>
-                <h1 class="text-xl font-semibold text-gray-700"><?php echo htmlspecialchars($page_title); ?></h1>
+                <h1 class="text-xl font-semibold text-gray-700" id="page-title"><?php echo htmlspecialchars($page_title); ?></h1>
             </div>
             <div class="flex items-center space-x-4">
                 <div class="relative" id="profileDropdownContainer">
-                    <button id="dropdownAvatarNameButton" data-dropdown-toggle="dropdownAvatarName" class="flex items-center text-sm pe-1 font-medium text-gray-900 rounded-full hover:text-blue-600 dark:hover:text-blue-500 md:me-0 focus:ring-4 focus:ring-gray-100 dark:focus:ring-gray-700 dark:text-white" type="button">
+                    <button id="dropdownAvatarNameButton" data-dropdown-toggle="dropdownAvatarName" class="flex items-center text-sm pe-1 font-medium text-gray-900 rounded-full hover:text-blue-600 dark:hover:text-blue-500 md:me-0 focus:ring-4 focus:ring-gray-100 dark:focus:ring-700 dark:text-white" type="button">
                         <span class="sr-only">Open user menu</span>
-                        <img class="w-8 h-8 me-2 rounded-full" src="<?php echo $profile_page_pic_url; ?>" alt="user photo" onerror="this.onerror=null; this.src='https://placehold.co/32x32/4299E1/FFFFFF?text=<?php echo $teacher_profile_pic_initial; ?>';">
+                        <img class="w-8 h-8 me-2 rounded-full" src="<?php echo $topbar_avatar_url; ?>" alt="user photo" onerror="this.onerror=null; this.src='https://placehold.co/32x32/A0AEC0/FFFFFF?text=<?php echo $teacher_profile_pic_initial; ?>';">
                         <?php echo htmlspecialchars($teacher_username); ?>
                         <svg class="w-2.5 h-2.5 ms-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6">
                             <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 4 4 4-4"/>
@@ -649,9 +677,9 @@ $chart_labels_json = json_encode($chart_labels);
                         </ul>
                         <div class="py-2">
                              <form action="logout_teacher.php" method="post" role="none" id="logoutForm">
-                                <a href="#" id="nav-logout-dropdown" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">
-                                    <i class="fas fa-sign-out-alt"></i> Sign out
-                                </a>
+                                 <a href="#" id="nav-logout-dropdown" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left">
+                                     <i class="fas fa-sign-out-alt"></i> Sign out
+                                 </a>
                             </form>
                         </div>
                     </div>
@@ -749,6 +777,9 @@ $chart_labels_json = json_encode($chart_labels);
                 case 'dashboard':
                 default:
                     if (file_exists($base_views_path . 'dashboard_content.php')) {
+                        // Pass chart data to dashboard_content.php
+                        $chart_labels_dashboard = $chart_labels_json; // Renamed to avoid collision if dashboard_content has its own labels
+                        $chart_datasets_dashboard = $chart_datasets_json; // Renamed
                         include $base_views_path . 'dashboard_content.php';
                         $content_loaded = true;
                     }
@@ -763,140 +794,141 @@ $chart_labels_json = json_encode($chart_labels);
         </main>
     </div>
 
-    <script>
-document.addEventListener('DOMContentLoaded', function() {
-    const sidebar = document.getElementById('sidebar');
-    const menuButton = document.getElementById('menuButton');
-    const sidebarToggleBottom = document.getElementById('sidebarToggleBottom');
-    
-    const dropdownAvatarNameButton = document.getElementById('dropdownAvatarNameButton');
-    const dropdownAvatarName = document.getElementById('dropdownAvatarName');
-    const profileDropdownContainer = document.getElementById('profileDropdownContainer');
-    
-    const navItems = document.querySelectorAll('.sidebar-item');
-
-    // Set active navigation item based on current page
-    const currentPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
-    const activeNavItem = document.getElementById(`nav-${currentPage}`);
-    if (activeNavItem) {
-        activeNavItem.classList.add('active');
-    }
-
-    // Sidebar toggle functionality
-    menuButton.addEventListener('click', function() {
-        sidebar.classList.toggle('-translate-x-full');
-    });
-
-    sidebarToggleBottom.addEventListener('click', function() {
-        sidebar.classList.toggle('collapsed');
-        sidebar.classList.toggle('w-64');
-        sidebar.classList.toggle('w-20');
-    });
-
-    // Profile dropdown functionality
-    if (dropdownAvatarNameButton && dropdownAvatarName) {
-        dropdownAvatarNameButton.addEventListener('click', function() {
-            dropdownAvatarName.classList.toggle('hidden');
-            dropdownAvatarNameButton.classList.toggle('active-dropdown-button');
-        });
-
-        // Close dropdown if clicked outside
-        document.addEventListener('click', function(event) {
-            if (!profileDropdownContainer.contains(event.target)) {
-                dropdownAvatarName.classList.add('hidden');
-                dropdownAvatarNameButton.classList.remove('active-dropdown-button');
-            }
-        });
-    }
-
-    // Profile edit/view toggle
-    const editProfileButton = document.getElementById('editProfileButton');
-    const cancelEditButton = document.getElementById('cancelEditButton');
-    const profileView = document.getElementById('profileView');
-    const profileEdit = document.getElementById('profileEdit');
-    const profilePicInput = document.getElementById('profile_pic');
-    const profilePicPreview = document.getElementById('profilePicPreview');
-
-    if (editProfileButton) {
-        editProfileButton.addEventListener('click', function() {
-            profileView.classList.add('hidden');
-            profileEdit.classList.remove('hidden');
-        });
-    }
-
-    if (cancelEditButton) {
-        cancelEditButton.addEventListener('click', function() {
-            profileEdit.classList.add('hidden');
-            profileView.classList.remove('hidden');
-        });
-    }
-
-    if (profilePicInput && profilePicPreview) {
-        profilePicInput.addEventListener('change', function(event) {
-            if (event.target.files && event.target.files[0]) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    profilePicPreview.src = e.target.result;
-                };
-                reader.readAsDataURL(event.target.files[0]);
-            }
-        });
-    }
-
-    // --- Logout Confirmation Modal --- //
-    const logoutModal = document.getElementById('logoutConfirmationModal');
-    const logoutButton = document.getElementById('nav-logout-dropdown'); // This is now an anchor tag
-    const cancelLogoutButton = document.getElementById('cancelLogoutBtn');
-    const confirmLogoutButton = document.getElementById('confirmLogoutBtn');
-    const logoutForm = document.getElementById('logoutForm');
-
-    if (logoutButton && logoutModal && logoutForm) {
-        logoutButton.addEventListener('click', function(event) {
-            event.preventDefault(); // Prevent default link behavior
-            logoutModal.classList.remove('hidden');
-            logoutModal.style.display = 'flex';
-        });
-
-        cancelLogoutButton.addEventListener('click', function() {
-            logoutModal.classList.add('hidden');
-            logoutModal.style.display = 'none';
-        });
-
-        confirmLogoutButton.addEventListener('click', function() {
-            logoutForm.submit();
-        });
-
-        logoutModal.addEventListener('click', function(event) {
-            if (event.target === logoutModal) {
-               logoutModal.classList.add('hidden');
-               logoutModal.style.display = 'none';
-            }
-        });
-    }
-});
-
-    </script>
-
-<div id="logoutConfirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
-    <div class="bg-white p-8 rounded-lg shadow-xl text-center max-w-sm w-full mx-4">
-        <div class="flex justify-center mb-4">
-            <svg class="w-16 h-16 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
-            </svg>
-        </div>
-        <h2 class="text-2xl font-bold text-gray-800 mb-2">Logout</h2>
-        <p class="text-gray-600 mb-6">Are you sure you want to log out?</p>
-        <div class="flex flex-col space-y-3">
-             <button id="confirmLogoutBtn" class="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200">
-                Log Out
-            </button>
-            <button id="cancelLogoutBtn" class="px-4 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors duration-200">
-                Cancel
-            </button>
+    <div id="logoutConfirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-xl text-center max-w-sm w-full mx-4">
+            <div class="flex justify-center mb-4">
+                <svg class="w-16 h-16 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-2">Logout</h2>
+            <p class="text-gray-600 mb-6">Are you sure you want to log out?</p>
+            <div class="flex flex-col space-y-3">
+                 <button id="confirmLogoutBtn" class="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                    Log Out
+                </button>
+                <button id="cancelLogoutBtn" class="px-4 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors duration-200">
+                    Cancel
+                </button>
+            </div>
         </div>
     </div>
-</div>
-<script type="text/javascript" src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<script type="text/javascript" src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
+
+    <script type="text/javascript" src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const sidebar = document.getElementById('sidebar');
+        const menuButton = document.getElementById('menuButton');
+        const sidebarToggleBottom = document.getElementById('sidebarToggleBottom');
+        
+        const dropdownAvatarNameButton = document.getElementById('dropdownAvatarNameButton');
+        const dropdownAvatarName = document.getElementById('dropdownAvatarName');
+        const profileDropdownContainer = document.getElementById('profileDropdownContainer');
+        
+        const navItems = document.querySelectorAll('.sidebar-item');
+
+        // Set active navigation item based on current page
+        const currentPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
+        const activeNavItem = document.getElementById(`nav-${currentPage}`);
+        if (activeNavItem) {
+            activeNavItem.classList.add('active');
+        }
+
+        // Sidebar toggle functionality
+        menuButton.addEventListener('click', function() {
+            sidebar.classList.toggle('-translate-x-full');
+        });
+
+        sidebarToggleBottom.addEventListener('click', function() {
+            sidebar.classList.toggle('collapsed');
+            sidebar.classList.toggle('w-64');
+            sidebar.classList.toggle('w-20');
+        });
+
+        // Profile dropdown functionality
+        if (dropdownAvatarNameButton && dropdownAvatarName) {
+            dropdownAvatarNameButton.addEventListener('click', function() {
+                dropdownAvatarName.classList.toggle('hidden');
+                dropdownAvatarNameButton.classList.toggle('active-dropdown-button');
+            });
+
+            // Close dropdown if clicked outside
+            document.addEventListener('click', function(event) {
+                if (!profileDropdownContainer.contains(event.target)) {
+                    dropdownAvatarName.classList.add('hidden');
+                    dropdownAvatarNameButton.classList.remove('active-dropdown-button');
+                }
+            });
+        }
+
+        // Profile edit/view toggle
+        const editProfileButton = document.getElementById('editProfileButton');
+        const cancelEditButton = document.getElementById('cancelEditButton');
+        const profileView = document.getElementById('profileView');
+        const profileEdit = document.getElementById('profileEdit');
+        const profilePicInput = document.getElementById('profile_pic');
+        const profilePicPreview = document.getElementById('profilePicPreview');
+
+        if (editProfileButton) {
+            editProfileButton.addEventListener('click', function() {
+                profileView.classList.add('hidden');
+                profileEdit.classList.remove('hidden');
+            });
+        }
+
+        if (cancelEditButton) {
+            cancelEditButton.addEventListener('click', function() {
+                profileEdit.classList.add('hidden');
+                profileView.classList.remove('hidden');
+            });
+        }
+
+        if (profilePicInput && profilePicPreview) {
+            profilePicInput.addEventListener('change', function(event) {
+                if (event.target.files && event.target.files[0]) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        profilePicPreview.src = e.target.result;
+                    };
+                    reader.readAsDataURL(event.target.files[0]);
+                }
+            });
+        }
+
+        // --- Logout Confirmation Modal --- //
+        const logoutModal = document.getElementById('logoutConfirmationModal');
+        const logoutButton = document.getElementById('nav-logout-dropdown'); // This is now an anchor tag
+        const cancelLogoutButton = document.getElementById('cancelLogoutBtn');
+        const confirmLogoutButton = document.getElementById('confirmLogoutBtn');
+        const logoutForm = document.getElementById('logoutForm');
+
+        if (logoutButton && logoutModal && logoutForm) {
+            logoutButton.addEventListener('click', function(event) {
+                event.preventDefault(); // Prevent default link behavior
+                logoutModal.classList.remove('hidden');
+                logoutModal.style.display = 'flex';
+            });
+
+            cancelLogoutButton.addEventListener('click', function() {
+                logoutModal.classList.add('hidden');
+                logoutModal.style.display = 'none';
+            });
+
+            confirmLogoutButton.addEventListener('click', function() {
+                logoutForm.submit();
+            });
+
+            logoutModal.addEventListener('click', function(event) {
+                if (event.target === logoutModal) {
+                   logoutModal.classList.add('hidden');
+                   logoutModal.style.display = 'none';
+                }
+            });
+        }
+    });
+
+    </script>
 </body>
 </html>
