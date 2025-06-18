@@ -421,14 +421,14 @@ $bar_chart_data_json = json_encode([
                     },
                     scales: {
                         x: {
-                            stacked: true, // Stack bars for each day
+                            stacked: false, // CHANGED: Set to false for grouped bars
                             title: {
                                 display: true,
                                 text: 'Day of Week'
                             }
                         },
                         y: {
-                            stacked: true, // Stack bars for each day
+                            stacked: false, // CHANGED: Set to false for grouped bars
                             beginAtZero: true,
                             title: {
                                 display: true,
