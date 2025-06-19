@@ -5,7 +5,7 @@
 
 // Ensure $conn and $teacher_id are available from teacher_dashboard.php scope
 if (!isset($conn)) {
-    echo "<p class='text-red-600'>Database connection not available.</p>";
+    echo "<p class='text-red-600'>Database connection not available.</p>"; // Check this line if error points here
     return; // Exit if no DB connection
 }
 // Note: $teacher_id is still passed, but for the global usage charts, we won't filter by teacher_id.
@@ -24,13 +24,14 @@ $master_chart_colors = [
     'ERROR'   => ['backgroundColor' => '#EF4444', 'borderColor' => '#DC2626'], // Tailwind red-500/600
     'Correct' => ['backgroundColor' => '#48BB78', 'borderColor' => '#38A169'], // Tailwind green-500/600
     'Incorrect' => ['backgroundColor' => '#FC8181', 'borderColor' => '#E53E3E'], // Tailwind red-400/500
+    'NO_SPEECH' => ['backgroundColor' => '#A1A1AA', 'borderColor' => '#71717A'], // Gray for no speech
 ];
 
 
 // --- Fetch all language settings by this teacher (the ones they have SET) ---
 // This is for the table that shows what languages *this specific teacher* has set for days.
 $teacher_language_history = [];
-if(isset($teacher_id)){ // Only attempt if teacher_id is available
+if(isset($conn) && isset($teacher_id)){
     $sql_history = "SELECT tdl.setting_date, l.language_name
                     FROM teacher_daily_languages tdl
                     JOIN languages l ON tdl.language_id = l.id
@@ -124,10 +125,10 @@ $week_end_date_str = $current_date_obj->format('Y-m-d');
 
 // Fetch data for the current week (Monday to Friday)
 $sql_weekly_bar_data = "SELECT usage_date, detected_language, COUNT(*) as count
-                         FROM language_usage
-                         WHERE usage_date BETWEEN ? AND ?
-                         GROUP BY usage_date, detected_language
-                         ORDER BY usage_date ASC";
+                            FROM language_usage
+                            WHERE usage_date BETWEEN ? AND ?
+                            GROUP BY usage_date, detected_language
+                            ORDER BY usage_date ASC";
 
 $stmt_weekly_bar_data = $conn->prepare($sql_weekly_bar_data);
 if ($stmt_weekly_bar_data) {
@@ -218,10 +219,10 @@ $bar_chart_data_json = json_encode([
 <div class="space-y-8">
     <div class="card mb-6">
         <div class="card-header">
-            <h3 class="text-lg font-semibold text-gray-700">Global Language Usage Overview</h3>
+            <h3 class="text-lg font-semibold text-gray-700">Language Usage Overview</h3>
         </div>
         <div class="card-body">
-            <p class="text-gray-600 mb-4">This section provides insights into overall system language usage patterns (all student attempts).</p>
+            
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
                 <div class="p-4 bg-gray-50 rounded-lg flex flex-col items-center">
@@ -245,10 +246,10 @@ $bar_chart_data_json = json_encode([
                 <div class="w-full h-80 flex items-center justify-center">
                     <canvas id="weeklyUsageTrendChart"></canvas>
                 </div>
-                <p class="text-xs text-gray-500 mt-2 text-center">Illustrates the volume of usage for each detected language across the current school week.</p>
+                
                 <div class="mt-4 text-right">
                     <button id="exportWeeklyUsageBtn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-md text-sm transition duration-150 shadow-md">
-                        <i class="fas fa-file-excel mr-2"></i>Export Weekly Usage
+                        <i class="fas fa-file-excel mr-2"></i>Export 
                     </button>
                 </div>
             </div>
@@ -291,7 +292,6 @@ $bar_chart_data_json = json_encode([
 </div>
 
 <script>
-    // Ensure the DOM is fully loaded before initializing DataTables and Charts
     document.addEventListener('DOMContentLoaded', function() {
         // --- DataTables Initialization ---
         if (document.getElementById('languageHistoryTable')) {
@@ -325,50 +325,16 @@ $bar_chart_data_json = json_encode([
         const statusPieChartData = <?php echo $status_pie_chart_data_json; ?>;
         const barChartData = <?php echo $bar_chart_data_json; ?>;
 
-        // 1. Detected Language Distribution Pie Chart
+        // 1. Detected Language Distribution Pie Chart (now Doughnut)
         const ctxLangDist = document.getElementById('languageDistributionChart');
         if (ctxLangDist) {
             new Chart(ctxLangDist, {
-                type: 'pie',
+                type: 'pie', // Type remains 'pie' for doughnut
                 data: pieChartData,
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                        },
-                        title: {
-                            display: false, // Title is in h4
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: function(context) {
-                                    let label = context.label || '';
-                                    if (label) {
-                                        label += ': ';
-                                    }
-                                    if (context.parsed !== null) {
-                                        label += context.parsed + ' entries';
-                                    }
-                                    return label;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-
-        // 2. Correct vs. Incorrect Detections Pie Chart
-        const ctxStatusDist = document.getElementById('statusDistributionChart');
-        if (ctxStatusDist) {
-            new Chart(ctxStatusDist, {
-                type: 'pie',
-                data: statusPieChartData,
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    cutout: '70%', // Makes it a doughnut chart
                     plugins: {
                         legend: {
                             position: 'right',
@@ -395,7 +361,43 @@ $bar_chart_data_json = json_encode([
             });
         }
 
-        // 3. Weekly Language Usage Trend Bar Chart
+        // 2. Correct vs. Incorrect Detections Pie Chart (now standard Pie)
+        const ctxStatusDist = document.getElementById('statusDistributionChart');
+        if (ctxStatusDist) {
+            new Chart(ctxStatusDist, {
+                type: 'pie', // Type remains 'pie'
+                data: statusPieChartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    // REMOVED cutout: '70%', // This line is removed to make it a standard pie chart
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                        },
+                        title: {
+                            display: false,
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += context.parsed + ' entries';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 3. Weekly Language Usage Trend Bar Chart (remains grouped bar)
         const ctxWeeklyTrend = document.getElementById('weeklyUsageTrendChart');
         if (ctxWeeklyTrend) {
             new Chart(ctxWeeklyTrend, {
@@ -408,7 +410,7 @@ $bar_chart_data_json = json_encode([
                         legend: {
                             position: 'top',
                             labels: {
-                                boxWidth: 20, // Make legend color boxes smaller
+                                boxWidth: 20,
                             }
                         },
                         title: {
@@ -421,21 +423,21 @@ $bar_chart_data_json = json_encode([
                     },
                     scales: {
                         x: {
-                            stacked: false, // CHANGED: Set to false for grouped bars
+                            stacked: false,
                             title: {
                                 display: true,
                                 text: 'Day of Week'
                             }
                         },
                         y: {
-                            stacked: false, // CHANGED: Set to false for grouped bars
+                            stacked: false,
                             beginAtZero: true,
                             title: {
                                 display: true,
                                 text: 'Number of Detections'
                             },
                             ticks: {
-                                precision: 0 // Ensure whole numbers
+                                precision: 0
                             }
                         }
                     }
@@ -447,8 +449,6 @@ $bar_chart_data_json = json_encode([
         const exportWeeklyUsageBtn = document.getElementById('exportWeeklyUsageBtn');
         if (exportWeeklyUsageBtn) {
             exportWeeklyUsageBtn.addEventListener('click', function() {
-                // Redirect to a new PHP script that generates the CSV/Excel file.
-                // You will need to create this file: 'export_weekly_usage.php'
                 window.location.href = 'export_weekly_usage.php';
             });
         }

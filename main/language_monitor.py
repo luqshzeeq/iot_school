@@ -2,11 +2,11 @@ import speech_recognition as sr
 from gtts import gTTS
 from playsound import playsound
 from datetime import datetime
-import csv
+import csv # Keep csv import if you still want to write to csv in addition to DB, otherwise remove
 from lingua import Language, LanguageDetectorBuilder
 import mysql.connector
 import os
-import requests # NEW: Import the requests library for sending HTTP requests
+import requests
 
 # ===== DATABASE CONFIGURATION =====
 DB_CONFIG = {
@@ -17,14 +17,10 @@ DB_CONFIG = {
 }
 
 # ===== ESP32 DEVICE CONFIGURATION (for direct communication) =====
-# You MUST replace this with your ESP32's actual IP address.
-# Check your ESP32's Serial Monitor or OLED display after it connects to WiFi.
 ESP32_IP_ADDRESS = "172.20.10.3" # Example: "192.168.1.100"
-ESP32_WEB_SERVER_PORT = 80 # Default port for ESP32's WebServer (from ESP32 code)
+ESP32_WEB_SERVER_PORT = 80 
 
 # ===== CONFIGURATION =====
-
-# Expected phrases per language (remains unchanged)
 expected_phrases = {
     'MALAY': [
         "makcik nak order nasi lemak dan teh ais",
@@ -48,7 +44,6 @@ expected_phrases = {
     ]
 }
 
-# Google Speech API language codes (remains unchanged)
 speech_lang_code = {
     'ENGLISH': 'en-US',
     'MALAY': 'ms-MY',
@@ -56,7 +51,6 @@ speech_lang_code = {
     'TAMIL': 'ta-IN'
 }
 
-# Map database language names to internal keys (remains unchanged)
 DB_LANG_TO_INTERNAL_KEY = {
     'Bahasa Melayu': 'MALAY',
     'English': 'ENGLISH',
@@ -64,7 +58,6 @@ DB_LANG_TO_INTERNAL_KEY = {
     'Tamil': 'TAMIL'
 }
 
-# Setup language detection (lingua) (remains unchanged)
 language_map = {
     'ENGLISH': Language.ENGLISH,
     'MALAY': Language.MALAY,
@@ -73,7 +66,6 @@ language_map = {
 }
 detector = LanguageDetectorBuilder.from_languages(*language_map.values()).build()
 
-# Helper function to play sound and clean up (remains unchanged)
 def play_feedback_sound(text, lang='en'):
     """Generates and plays an audio feedback, then cleans up the audio file."""
     try:
@@ -125,7 +117,7 @@ def get_language_of_day_from_db(date_str):
             target_language_id = result['language_id']
             target_language_name = result['language_name']
             internal_lang_key = DB_LANG_TO_INTERNAL_KEY.get(target_language_name)
-            print(f"Found daily language: {target_language_name} (ID: {target_language_id})") # Cleaner print for final output
+            print(f"Found daily language: {target_language_name} (ID: {target_language_id})")
         else:
             print(f"No global language setting found for {date_str}.")
 
@@ -153,14 +145,36 @@ def log_language_usage_to_db(language_id, detected_lang_str, status, transcribed
         """
         cursor.execute(query, (language_id, current_date, detected_lang_str, status_enum))
         conn.commit()
-        print("Language usage logged to database.") # Cleaner print for final output
+        print("Language usage logged to database (language_usage table).") # Updated print message
     except mysql.connector.Error as err:
-        print(f"Error logging language usage: {err}")
+        print(f"Error logging language usage (language_usage table): {err}")
     finally:
         cursor.close()
         conn.close()
 
-# NEW: Function to send result to ESP32 via HTTP GET
+# NEW: Function to log student interaction to the new table
+def log_student_interaction_to_db(log_date, log_time, transcribed_text, detected_language, expected_language, result_status):
+    """Logs student interaction details to the student_interaction_logs table."""
+    conn = get_db_connection()
+    if not conn:
+        return
+
+    cursor = conn.cursor()
+    try:
+        query = """
+        INSERT INTO student_interaction_logs (log_date, log_time, transcribed_text, detected_language, expected_language, result_status, timestamp)
+        VALUES (%s, %s, %s, %s, %s, %s, NOW())
+        """
+        cursor.execute(query, (log_date, log_time, transcribed_text, detected_language, expected_language, result_status))
+        conn.commit()
+        print("Student interaction logged to database (student_interaction_logs table).")
+    except mysql.connector.Error as err:
+        print(f"Error logging student interaction (student_interaction_logs table): {err}")
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def send_result_to_esp32(result_status_for_esp32):
     """Sends the detection result as an HTTP GET request to the ESP32."""
     if ESP32_IP_ADDRESS == "YOUR_ESP32_IP_ADDRESS":
@@ -184,7 +198,7 @@ target_language_id, target_language_internal_key = get_language_of_day_from_db(c
 if not target_language_internal_key:
     print("Could not determine target language. Exiting.")
     play_feedback_sound("Sorry, I cannot determine the language for today. Please contact support.")
-    send_result_to_esp32("UnknownCmd") # Inform ESP32 of unknown state
+    send_result_to_esp32("Unknown") # Inform ESP32 of unknown state
     exit()
 
 print(f"Today is {datetime.now().strftime('%A, %Y-%m-%d')}. Expected language: {target_language_internal_key.capitalize()}")
@@ -203,14 +217,18 @@ except sr.WaitTimeoutError:
     print("No speech detected within timeout.")
     play_feedback_sound("Sorry, I didn't hear anything. Please try again.")
     send_result_to_esp32("NoSpeech") # Inform ESP32
+    # Log to both tables
     log_language_usage_to_db(target_language_id, "NO_SPEECH", "Wrong", "No speech detected within timeout")
-    exit() # Exit after timeout
+    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), "NO_SPEECH_DETECTED", "N/A", target_language_internal_key, "NoSpeech")
+    exit()
 except Exception as e:
     print(f"Microphone/Audio capture error: {e}")
     play_feedback_sound("Microphone error. Please check your microphone and permissions.")
     send_result_to_esp32("MicError") # Inform ESP32
+    # Log to both tables
     log_language_usage_to_db(target_language_id, "MIC_ERROR", "Wrong", f"Microphone error: {e}")
-    exit() # Exit on mic error
+    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"MIC_ERROR: {e}", "N/A", target_language_internal_key, "MicError")
+    exit()
 
 
 user_text = ""
@@ -247,38 +265,58 @@ try:
     # Send final result (Correct/Wrong) to ESP32
     send_result_to_esp32(result) # Send "Correct" or "Wrong"
 
-    # Logging
-    now = datetime.now()
-    with open("canteen_log.csv", mode='a', newline='', encoding='utf-8') as file:
-        writer = csv.writer(file)
-        writer.writerow([
-            now.strftime("%Y-%m-%d"),
-            now.strftime("%H:%M:%S"),
-            transcribed_text,
-            detected_lang_name,
-            target_language_internal_key, # This is the expected language, not the detected.
-            result
-        ])
-    print("Logged to canteen_log.csv")
+    # --- Logging ---
+    # Log to language_usage table
     log_language_usage_to_db(target_language_id, detected_lang_name, result, transcribed_text)
+
+    # Log to new student_interaction_logs table
+    log_student_interaction_to_db(
+        datetime.now().strftime("%Y-%m-%d"),
+        datetime.now().strftime("%H:%M:%S"),
+        transcribed_text,
+        detected_lang_name,
+        target_language_internal_key, # Expected language
+        result
+    )
+
+    # Removed CSV logging, as data is now going to student_interaction_logs table
+    # kept for reference if needed:
+    # now = datetime.now()
+    # with open("canteen_log.csv", mode='a', newline='', encoding='utf-8') as file:
+    #     writer = csv.writer(file)
+    #     writer.writerow([
+    #         now.strftime("%Y-%m-%d"),
+    #         now.strftime("%H:%M:%S"),
+    #         transcribed_text,
+    #         detected_lang_name,
+    #         target_language_internal_key,
+    #         result
+    #     ])
+    # print("Logged to canteen_log.csv")
 
 except sr.UnknownValueError:
     print("Could not understand audio.")
     feedback_msg = f"Sorry, I couldn’t understand. Please try again in {target_language_internal_key.capitalize()}."
     play_feedback_sound(feedback_msg, lang='en')
     send_result_to_esp32("Unknown") # Inform ESP32 that transcription was unknown
+    # Log to both tables
     log_language_usage_to_db(target_language_id, "UNKNOWN", "Wrong", "Could not understand audio")
+    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), "UNTRANSCRIBABLE", "UNKNOWN", target_language_internal_key, "Unknown")
 
 except sr.RequestError as e:
     print(f"Could not request results from Google Speech Recognition service; {e}")
     feedback_msg = "Speech recognition service error. Please check your internet connection."
     play_feedback_sound(feedback_msg, lang='en')
     send_result_to_esp32("API_Error") # Inform ESP32 of API error
+    # Log to both tables
     log_language_usage_to_db(target_language_id, "API_ERROR", "Wrong", f"Speech Recognition API Error: {e}")
+    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"API_ERROR: {e}", "N/A", target_language_internal_key, "API_Error")
 
 except Exception as e:
     print(f"An unexpected error occurred: {e}")
     feedback_msg = "An unexpected error occurred. Please try again."
     play_feedback_sound(feedback_msg, lang='en')
     send_result_to_esp32("SystemError") # Inform ESP32 of a general system error
+    # Log to both tables
     log_language_usage_to_db(target_language_id, "SYSTEM_ERROR", "Wrong", f"Unexpected Error: {e}")
+    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"SYSTEM_ERROR: {e}", "N/A", target_language_internal_key, "SystemError")

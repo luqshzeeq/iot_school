@@ -118,17 +118,22 @@
             <div class="card-body space-y-4">
                 <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
                     <h4 class="font-semibold text-gray-800 mb-1">Set Today's Language</h4>
-                    <p class="text-gray-600 text-sm mb-3">Quickly jump to set or verify the language for today.</p>
-                    <a href="teacher_dashboard.php?page=set_language" class="inline-block px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">Go to Settings</a>
+                    <br>
+                    <a href="teacher_dashboard.php?page=set_language" class="inline-block px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors">
+                        <i class="fas fa-language mr-2"></i>Set Language </a>
                 </div>
                 <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <h4 class="font-semibold text-gray-800 mb-1">View Usage Reports</h4>
-                    <p class="text-gray-600 text-sm mb-3">Check analytics and reports on language usage.</p>
-                    <a href="teacher_dashboard.php?page=language_usage" class="inline-block px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors">View Reports</a>
+                    <h4 class="font-semibold text-gray-800 mb-1">View Language Usage </h4>
+                    <br>
+                    <a href="teacher_dashboard.php?page=language_usage" class="inline-block px-4 py-2 text-sm font-medium rounded-md bg-green-600 text-white hover:bg-green-700 transition-colors">
+                        <i class="fas fa-chart-bar mr-2"></i>View Reports </a>
                 </div>
                 <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
-                    <h4 class="font-semibold text-gray-800 mb-1">Upcoming Feature</h4>
-                    <p class="text-gray-600 text-sm">Student interaction log (Placeholder).</p>
+                    <h4 class="font-semibold text-gray-800 mb-1">Student Interaction Logs</h4> 
+                    <br>
+                    <button id="exportStudentLogsBtn" class="inline-block px-4 py-2 text-sm font-medium rounded-md bg-purple-600 text-white hover:bg-purple-700 transition-colors">
+                        <i class="fas fa-file-excel mr-2"></i>Export 
+                    </button>
                 </div>
             </div>
         </div>
@@ -155,7 +160,7 @@
             <h3 class="text-lg font-semibold text-gray-700">Language Setting Trend</h3>
         </div>
         <div class="card-body">
-            <div class="w-full h-72 bg-gray-100 rounded-lg flex items-center justify-center">
+            <div class="w-full h-72 rounded-lg flex items-center justify-center">
                 <canvas id="languageTrendChart"></canvas>
             </div>
             <p class="text-xs text-gray-500 mt-2 text-center">This chart shows your language settings from Monday to Friday this week.</p>
@@ -166,50 +171,78 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Chart.js initialization
+    // Chart.js initialization (remains the same)
     const ctx = document.getElementById('languageTrendChart');
     if (ctx) {
         new Chart(ctx, {
             type: 'bar',
             data: {
-                // Dynamically set labels from PHP
                 labels: <?php echo $chart_labels_json; ?>,
-                // Dynamically set datasets from PHP
                 datasets: <?php echo $chart_datasets_json; ?>
             },
             options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    y: { beginAtZero: true, title: { display: true, text: 'Instances Set' }, ticks: { stepSize: 1 } },
-                    x: { title: { display: true, text: 'Day of the Week' } }
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: true, position: 'top' },
+                    tooltip: { mode: 'index', intersect: false }
                 },
-                plugins: { legend: { display: true, position: 'top' } }
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Instances Set' },
+                        ticks: { stepSize: 1 },
+                        grid: {
+                            color: 'rgba(200, 200, 200, 0.5)',
+                            borderColor: 'rgba(150, 150, 150, 0.8)',
+                            drawBorder: true,
+                            drawOnChartArea: true
+                        },
+                        border: {
+                            display: true
+                        }
+                    },
+                    x: {
+                        title: { display: true, text: 'Day of the Week' },
+                        categoryPercentage: 0.7,
+                        barPercentage: 0.8,
+                        grid: {
+                            color: 'rgba(200, 200, 200, 0.5)',
+                            borderColor: 'rgba(150, 150, 150, 0.8)',
+                            drawBorder: true,
+                            drawOnChartArea: true,
+                            drawTicks: true
+                        },
+                        border: {
+                            display: true
+                        }
+                    }
+                }
             }
         });
     }
 
-    // Calendar Logic
+    // Calendar Logic (remains the same)
     const calendarDaysGrid = document.getElementById('calendarDaysGrid');
     const currentMonthYearEl = document.getElementById('currentMonthYear');
     const prevMonthBtn = document.getElementById('prevMonth');
     const nextMonthBtn = document.getElementById('nextMonth');
 
     if (calendarDaysGrid && currentMonthYearEl && prevMonthBtn && nextMonthBtn) {
-        let calendarDate = new Date(); // This date object will be used to track the displayed month
-        const today = new Date();     // This date object stores today's actual date for highlighting
+        let calendarDate = new Date();
+        const today = new Date();
 
         function renderCalendar() {
-            calendarDaysGrid.innerHTML = ''; // Clear previous days
+            calendarDaysGrid.innerHTML = '';
             const year = calendarDate.getFullYear();
-            const month = calendarDate.getMonth(); // 0-indexed (January is 0)
+            const month = calendarDate.getMonth();
 
             currentMonthYearEl.textContent = new Date(year, month).toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
-            const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 (Sun) to 6 (Sat)
-            const daysInMonth = new Date(year, month + 1, 0).getDate(); // Days in current month
-            const daysInPrevMonth = new Date(year, month, 0).getDate(); // Days in previous month
+            const firstDayOfMonth = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const daysInPrevMonth = new Date(year, month, 0).getDate();
 
-            // Add leading days from the previous month
             for (let i = 0; i < firstDayOfMonth; i++) {
                 const dayElement = document.createElement('div');
                 dayElement.classList.add('calendar-day', 'inactive-month');
@@ -217,21 +250,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 calendarDaysGrid.appendChild(dayElement);
             }
 
-            // Add days of the current month
             for (let day = 1; day <= daysInMonth; day++) {
                 const dayElement = document.createElement('div');
-                dayElement.innerHTML = `<span>${day}</span>`; // Wrap day number in a span
+                dayElement.innerHTML = `<span>${day}</span>`;
                 dayElement.classList.add('calendar-day', 'active-month');
 
-                // Highlight current day
                 if (day === today.getDate() && month === today.getMonth() && year === today.getFullYear()) {
                     dayElement.classList.add('current-day');
                 }
                 calendarDaysGrid.appendChild(dayElement);
             }
 
-            // Add trailing days from the next month to fill the grid (typically 6 rows = 42 cells)
-            const totalCellsInGrid = 42; // Standard 6 rows * 7 days
+            const totalCellsInGrid = 42;
             const currentRenderedCells = firstDayOfMonth + daysInMonth;
             const remainingCellsToFill = totalCellsInGrid - currentRenderedCells;
 
@@ -253,9 +283,17 @@ document.addEventListener('DOMContentLoaded', function() {
             renderCalendar();
         });
 
-        renderCalendar(); // Initial render of the calendar
+        renderCalendar();
     } else {
         console.warn("One or more calendar elements (calendarDaysGrid, currentMonthYear, prevMonth, nextMonth) not found in the DOM.");
+    }
+
+    // --- Student Interaction Logs Export Button Logic (NEW) ---
+    const exportStudentLogsBtn = document.getElementById('exportStudentLogsBtn');
+    if (exportStudentLogsBtn) {
+        exportStudentLogsBtn.addEventListener('click', function() {
+            window.location.href = 'export_student_logs.php';
+        });
     }
 });
 </script>
