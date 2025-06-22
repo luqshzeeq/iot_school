@@ -17,7 +17,7 @@ DB_CONFIG = {
 }
 
 # ===== ESP32 DEVICE CONFIGURATION (for direct communication) =====
-ESP32_IP_ADDRESS = "172.20.10.3" # Example: "192.168.1.100"
+ESP32_IP_ADDRESS = "172.20.10.3"
 ESP32_WEB_SERVER_PORT = 80 
 
 # ===== CONFIGURATION =====
@@ -198,125 +198,101 @@ target_language_id, target_language_internal_key = get_language_of_day_from_db(c
 if not target_language_internal_key:
     print("Could not determine target language. Exiting.")
     play_feedback_sound("Sorry, I cannot determine the language for today. Please contact support.")
-    send_result_to_esp32("Unknown") # Inform ESP32 of unknown state
+    send_result_to_esp32("Unknown")
     exit()
 
 print(f"Today is {datetime.now().strftime('%A, %Y-%m-%d')}. Expected language: {target_language_internal_key.capitalize()}")
-print("Please speak your order...")
 
-# Start mic
-recognizer = sr.Recognizer()
-try: # Wrap microphone part in its own try-except for mic issues
-    with sr.Microphone() as source:
-        recognizer.adjust_for_ambient_noise(source, duration=1)
-        print("Listening...")
-        audio = recognizer.listen(source, timeout=5, phrase_time_limit=5) # Added timeout and phrase_time_limit
-        print("Audio captured. Processing...")
+while True: # This loop makes the script continuously listen and process
+    print("\nPlease speak your order...")
+    user_text = ""
+    transcribed_text = ""
+    detected_lang_name = "N/A"
+    result = "Wrong"
 
-except sr.WaitTimeoutError:
-    print("No speech detected within timeout.")
-    play_feedback_sound("Sorry, I didn't hear anything. Please try again.")
-    send_result_to_esp32("NoSpeech") # Inform ESP32
-    # Log to both tables
-    log_language_usage_to_db(target_language_id, "NO_SPEECH", "Wrong", "No speech detected within timeout")
-    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), "NO_SPEECH_DETECTED", "N/A", target_language_internal_key, "NoSpeech")
-    exit()
-except Exception as e:
-    print(f"Microphone/Audio capture error: {e}")
-    play_feedback_sound("Microphone error. Please check your microphone and permissions.")
-    send_result_to_esp32("MicError") # Inform ESP32
-    # Log to both tables
-    log_language_usage_to_db(target_language_id, "MIC_ERROR", "Wrong", f"Microphone error: {e}")
-    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"MIC_ERROR: {e}", "N/A", target_language_internal_key, "MicError")
-    exit()
+    recognizer = sr.Recognizer()
+    try:
+        with sr.Microphone() as source:
+            recognizer.adjust_for_ambient_noise(source, duration=1)
+            print("Listening...")
+            audio = recognizer.listen(source, timeout=5, phrase_time_limit=5)
+            print("Audio captured. Processing...")
 
+    except sr.WaitTimeoutError:
+        print("No speech detected within timeout.")
+        play_feedback_sound("Sorry, I didn't hear anything. Please try again.")
+        send_result_to_esp32("NoSpeech")
+        log_language_usage_to_db(target_language_id, "NO_SPEECH", "Wrong", "No speech detected within timeout")
+        log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), "NO_SPEECH_DETECTED", "N/A", target_language_internal_key, "NoSpeech")
+        # --- ADD THIS LINE HERE ---
+        input("Press ENTER to try again for the next order...") # Wait for user input
+        continue # Use 'continue' to restart the while loop from the beginning
+    except Exception as e:
+        print(f"Microphone/Audio capture error: {e}")
+        play_feedback_sound("Microphone error. Please check your microphone and permissions.")
+        send_result_to_esp32("MicError")
+        log_language_usage_to_db(target_language_id, "MIC_ERROR", "Wrong", f"Microphone error: {e}")
+        log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"MIC_ERROR: {e}", "N/A", target_language_internal_key, "MicError")
+        # For a severe error, you might want to exit:
+        exit()
 
-user_text = ""
-transcribed_text = ""
-detected_lang_name = "N/A"
-result = "Wrong" # Default result for system-level logic
+    try:
+        transcribed_text = recognizer.recognize_google(audio, language=speech_lang_code[target_language_internal_key])
+        print(f"Transcribed: {transcribed_text}")
+        user_text = transcribed_text.lower().strip()
 
-try:
-    # Transcribe audio using the speech code for the detected target language
-    transcribed_text = recognizer.recognize_google(audio, language=speech_lang_code[target_language_internal_key])
-    print(f"Transcribed: {transcribed_text}")
-    user_text = transcribed_text.lower().strip()
+        detected_lingua_lang = detector.detect_language_of(user_text)
+        detected_lang_name = detected_lingua_lang.name.upper() if detected_lingua_lang else "UNKNOWN"
+        print(f"Detected language (Lingua): {detected_lang_name}")
 
-    # Detect language with Lingua
-    detected_lingua_lang = detector.detect_language_of(user_text)
-    detected_lang_name = detected_lingua_lang.name.upper() if detected_lingua_lang else "UNKNOWN"
-    print(f"Detected language (Lingua): {detected_lang_name}")
+        if detected_lang_name == target_language_internal_key:
+            feedback_msg = f"Correct! You spoke in {target_language_internal_key.capitalize()}."
+            result = "Correct"
+        elif any(phrase.lower() in user_text for phrase in expected_phrases.get(target_language_internal_key, [])):
+            feedback_msg = f"Acceptable phrase in {target_language_internal_key.capitalize()}."
+            result = "Correct"
+        else:
+            feedback_msg = f"Wrong language. Please speak in {target_language_internal_key.capitalize()}."
+            result = "Wrong"
 
-    # Determine correctness
-    # The 'result' variable here is the one used for logging and for sending to ESP32
-    if detected_lang_name == target_language_internal_key:
-        feedback_msg = f"Correct! You spoke in {target_language_internal_key.capitalize()}."
-        result = "Correct" # Result for ESP32 and logging
-    elif any(phrase.lower() in user_text for phrase in expected_phrases.get(target_language_internal_key, [])):
-        feedback_msg = f"Acceptable phrase in {target_language_internal_key.capitalize()}."
-        result = "Correct" # Treat "Correct (Fallback)" as just "Correct" for ESP32/simplicity
-    else:
-        feedback_msg = f"Wrong language. Please speak in {target_language_internal_key.capitalize()}."
-        result = "Wrong" # Result for ESP32 and logging
+        print(feedback_msg)
+        play_feedback_sound(feedback_msg, lang='en')
 
-    print(feedback_msg)
-    play_feedback_sound(feedback_msg, lang='en')
+        send_result_to_esp32(result)
 
-    # Send final result (Correct/Wrong) to ESP32
-    send_result_to_esp32(result) # Send "Correct" or "Wrong"
+        log_language_usage_to_db(target_language_id, detected_lang_name, result, transcribed_text)
+        log_student_interaction_to_db(
+            datetime.now().strftime("%Y-%m-%d"),
+            datetime.now().strftime("%H:%M:%S"),
+            transcribed_text,
+            detected_lang_name,
+            target_language_internal_key,
+            result
+        )
 
-    # --- Logging ---
-    # Log to language_usage table
-    log_language_usage_to_db(target_language_id, detected_lang_name, result, transcribed_text)
+    except sr.UnknownValueError:
+        print("Could not understand audio (from Google Speech Recognition).")
+        feedback_msg = f"Sorry, I couldn’t understand the audio. Please try again in {target_language_internal_key.capitalize()}."
+        play_feedback_sound(feedback_msg, lang='en')
+        send_result_to_esp32("Unknown")
+        log_language_usage_to_db(target_language_id, "UNKNOWN", "Wrong", "Could not understand audio")
+        log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), "UNTRANSCRIBABLE", "UNKNOWN", target_language_internal_key, "Unknown")
 
-    # Log to new student_interaction_logs table
-    log_student_interaction_to_db(
-        datetime.now().strftime("%Y-%m-%d"),
-        datetime.now().strftime("%H:%M:%S"),
-        transcribed_text,
-        detected_lang_name,
-        target_language_internal_key, # Expected language
-        result
-    )
+    except sr.RequestError as e:
+        print(f"Could not request results from Google Speech Recognition service; {e}")
+        feedback_msg = "Speech recognition service error. Please check your internet connection."
+        play_feedback_sound(feedback_msg, lang='en')
+        send_result_to_esp32("API_Error")
+        log_language_usage_to_db(target_language_id, "API_ERROR", "Wrong", f"Speech Recognition API Error: {e}")
+        log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"API_ERROR: {e}", "N/A", target_language_internal_key, "API_Error")
 
-    # Removed CSV logging, as data is now going to student_interaction_logs table
-    # kept for reference if needed:
-    # now = datetime.now()
-    # with open("canteen_log.csv", mode='a', newline='', encoding='utf-8') as file:
-    #     writer = csv.writer(file)
-    #     writer.writerow([
-    #         now.strftime("%Y-%m-%d"),
-    #         now.strftime("%H:%M:%S"),
-    #         transcribed_text,
-    #         detected_lang_name,
-    #         target_language_internal_key,
-    #         result
-    #     ])
-    # print("Logged to canteen_log.csv")
-
-except sr.UnknownValueError:
-    print("Could not understand audio.")
-    feedback_msg = f"Sorry, I couldn’t understand. Please try again in {target_language_internal_key.capitalize()}."
-    play_feedback_sound(feedback_msg, lang='en')
-    send_result_to_esp32("Unknown") # Inform ESP32 that transcription was unknown
-    # Log to both tables
-    log_language_usage_to_db(target_language_id, "UNKNOWN", "Wrong", "Could not understand audio")
-    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), "UNTRANSCRIBABLE", "UNKNOWN", target_language_internal_key, "Unknown")
-
-except sr.RequestError as e:
-    print(f"Could not request results from Google Speech Recognition service; {e}")
-    feedback_msg = "Speech recognition service error. Please check your internet connection."
-    play_feedback_sound(feedback_msg, lang='en')
-    send_result_to_esp32("API_Error") # Inform ESP32 of API error
-    # Log to both tables
-    log_language_usage_to_db(target_language_id, "API_ERROR", "Wrong", f"Speech Recognition API Error: {e}")
-    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"API_ERROR: {e}", "N/A", target_language_internal_key, "API_Error")
-
-except Exception as e:
-    print(f"An unexpected error occurred: {e}")
-    feedback_msg = "An unexpected error occurred. Please try again."
-    play_feedback_sound(feedback_msg, lang='en')
-    send_result_to_esp32("SystemError") # Inform ESP32 of a general system error
-    # Log to both tables
-    log_language_usage_to_db(target_language_id, "SYSTEM_ERROR", "Wrong", f"Unexpected Error: {e}")
-    log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"SYSTEM_ERROR: {e}", "N/A", target_language_internal_key, "SystemError")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        feedback_msg = "An unexpected error occurred. Please try again."
+        play_feedback_sound(feedback_msg, lang='en')
+        send_result_to_esp32("SystemError")
+        log_language_usage_to_db(target_language_id, "SYSTEM_ERROR", "Wrong", f"Unexpected Error: {e}")
+        log_student_interaction_to_db(datetime.now().strftime("%Y-%m-%d"), datetime.now().strftime("%H:%M:%S"), f"SYSTEM_ERROR: {e}", "N/A", target_language_internal_key, "SystemError")
+    
+    # --- ADD THIS LINE HERE ---
+    input("\nPress ENTER to continue to the next order...") # This will pause the script and wait for user to press ENTER

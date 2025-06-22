@@ -235,14 +235,17 @@ if ($stmt_all_languages_table) {
 }
 
 
-// --- Data for Recent Password Reset Requests Table ---
+// Fetching recent password reset requests
 $recent_password_resets_data = [];
 $search_query_resets = trim($_GET['search_query_resets'] ?? ''); // Unique param
 $sql_recent_resets = "SELECT pr.expires_at, u.username, pr.email FROM password_resets pr JOIN users u ON pr.email = u.email WHERE pr.expires_at BETWEEN ? AND ?";
+
+// Add search filters for the reset requests
 if ($search_query_resets !== '') {
     $sql_recent_resets .= " AND (u.username LIKE ? OR pr.email LIKE ?)";
 }
 $sql_recent_resets .= " ORDER BY pr.expires_at DESC LIMIT 100"; // Limit to a reasonable number for client-side processing
+
 $stmt_recent_resets = $conn->prepare($sql_recent_resets);
 if ($stmt_recent_resets) {
     $bind_types = "ss";
@@ -254,54 +257,47 @@ if ($stmt_recent_resets) {
         $bind_types .= "ss";
     }
     $stmt_recent_resets->bind_param($bind_types, ...$bind_params);
+
     if ($stmt_recent_resets->execute()) {
         $result = $stmt_recent_resets->get_result();
-        while($row = $result->fetch_assoc()) {
+        while ($row = $result->fetch_assoc()) {
+            // Determine the reset status
+            $status = (strtotime($row['expires_at']) > time()) ? 'Pending' : 'Expired';
+            
             $recent_password_resets_data[] = [
                 'user' => $row['username'],
                 'email' => $row['email'],
                 'request_date' => $row['expires_at'],
-                'status' => (strtotime($row['expires_at']) > time()) ? 'Pending' : 'Expired' // Determine status
+                'status' => $status // Set the correct status
             ];
         }
     }
     $stmt_recent_resets->close();
+} else {
+    $modal_error_message = "Error preparing the SQL query for password resets: " . $conn->error;
 }
 
 
-// --- Data for Daily Language Settings Table ---
+
+// Fetch daily language settings table
 $teacher_daily_lang_settings_data = [];
-$search_query_daily_langs = trim($_GET['search_query_daily_langs'] ?? ''); // Unique param
-$sql_daily_langs = "SELECT tdl.setting_date, u.username AS teacher_username, l.language_name FROM teacher_daily_languages tdl JOIN users u ON tdl.teacher_id = u.id JOIN languages l ON tdl.language_id = l.id WHERE tdl.setting_date BETWEEN ? AND ?";
-if ($search_query_daily_langs !== '') {
-    $sql_daily_langs .= " AND (u.username LIKE ? OR l.language_name LIKE ?)";
-}
-$sql_daily_langs .= " ORDER BY tdl.setting_date DESC, u.username ASC LIMIT 100"; // Limit for client-side
-$stmt_daily_langs = $conn->prepare($sql_daily_langs);
-if ($stmt_daily_langs) {
-    $bind_params = [$start_date_query_format, $end_date_query_format];
-    $bind_types = "ss";
-    if ($search_query_daily_langs !== '') {
-        $search_param_daily_langs = "%" . $search_query_daily_langs . "%";
-        $bind_params[] = $search_param_daily_langs;
-        $bind_params[] = $search_param_daily_langs;
-        $bind_types .= "ss";
-    }
-    $stmt_daily_langs->bind_param($bind_types, ...$bind_params);
-    if ($stmt_daily_langs->execute()) {
-        $result = $stmt_daily_langs->get_result();
-        while ($row = $result->fetch_assoc()) {
-            $teacher_daily_lang_settings_data[] = [
-                'setting_date' => $row['setting_date'],
-                'teacher_username' => $row['teacher_username'],
-                'language_name' => $row['language_name']
-            ];
-        }
-    }
-    $stmt_daily_langs->close();
-}
+// CORRECTED: The "WHERE tdl.setting_date BETWEEN ? AND ?" clause is removed to fetch all data.
+$sql_daily_langs = "SELECT tdl.setting_date, u.username AS teacher_username, l.language_name, tdl.set_by_teacher_id FROM teacher_daily_languages tdl LEFT JOIN users u ON tdl.set_by_teacher_id = u.id JOIN languages l ON tdl.language_id = l.id ORDER BY tdl.setting_date DESC, u.username ASC LIMIT 100";
 
-
+$result_daily_langs = $conn->query($sql_daily_langs);
+if ($result_daily_langs) {
+    while ($row = $result_daily_langs->fetch_assoc()) {
+        // Handle cases where a teacher might have been deleted but their settings remain
+        $username_display = $row['teacher_username'] ?? 'N/A (ID: ' . ($row['set_by_teacher_id'] ?? '') . ')'; 
+        $teacher_daily_lang_settings_data[] = [
+            'setting_date' => $row['setting_date'],
+            'teacher_username' => $username_display,
+            'language_name' => $row['language_name']
+        ];
+    }
+} else {
+    $modal_error_message = "Error fetching daily language settings: " . $conn->error;
+}
 // --- 4. Fetch All Data (Dashboard Stats & Charts) ---
 $stats = [
     'total_users' => 0, 'active_users' => 0, 'inactive_users' => 0,
@@ -356,7 +352,6 @@ $lang_bar_data = ['labels' => $month_labels, 'data' => array_values($monthly_lan
 include 'header.php';
 ?>
 
-<!-- Page-specific styles -->
 <style>
     /* Standard card and chart styles */
     .stat-card { background-color: white; padding: 1.5rem; border-radius: 0.5rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); display: flex; align-items: center; }
@@ -379,7 +374,7 @@ include 'header.php';
     }
     .status-badge.success { background-color: #d1fae5; color: #065f46; } /* green-100, green-800 */
     .status-badge.pending { background-color: #fef3c7; color: #92400e; } /* yellow-100, yellow-800 */
-    .status-badge.expired { background-color: #fef3c7; color: #92400e; } /* yellow-100, yellow-800 - using pending for expired for now */
+    .status-badge.expired { background-color: #fee2e2; color: #991b1b; } /* red-100, red-800 */
     .status-badge.failed { background-color: #fee2e2; color: #991b1b; } /* red-100, red-800 */
 
     /* Styles for the common modal structure (used by delete, success, and logout in header.php) */
@@ -510,7 +505,6 @@ include 'header.php';
     }
 </style>
 
-<!-- MAIN CONTENT AREA -->
 <main class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-6">
     <div class="container mx-auto">
         <?php
@@ -525,14 +519,12 @@ include 'header.php';
         endif;
         ?>
 
-        <!-- Stat Cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
             <div class="stat-card"><i class="fas fa-users bg-blue-500"></i><div><div class="value"><?php echo $stats['total_users']; ?></div><div class="label">Total Teachers</div></div></div>
             <div class="stat-card"><i class="fas fa-desktop bg-green-500"></i><div><div class="value"><?php echo $stats['total_devices']; ?></div><div class="label">Total Devices</div></div></div>
             <div class="stat-card"><i class="fas fa-language bg-purple-500"></i><div><div class="value"><?php echo $stats['total_languages']; ?></div><div class="label">Total Languages</div></div></div>
         </div>
 
-        <!-- Doughnut Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <div class="chart-container flex flex-col items-center">
                 <h3 class="text-lg font-semibold text-gray-800 mb-4">User Status (Teachers)</h3>
@@ -548,16 +540,13 @@ include 'header.php';
             </div>
         </div>
 
-        <!-- Bar Charts -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
             <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">New Teacher Registrations (Last 7 Days)</h3><canvas id="userWeeklyChart"></canvas></div>
             <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">Languages Added (<?php echo $current_year; ?>)</h3><canvas id="langWeeklyChart"></canvas></div>
         </div>
         
-        <!-- All Tables (unified format) -->
         <div class="space-y-6">
 
-            <!-- Recent Language Setups Table -->
             <div class="bg-white p-6 rounded-lg shadow-lg">
                 <div class="table-controls-header">
                     <h3 class="text-lg font-semibold text-gray-800">Recent Language Setups</h3>
@@ -582,8 +571,7 @@ include 'header.php';
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <!-- Rows will be rendered by JavaScript -->
-                        </tbody>
+                            </tbody>
                     </table>
                     <div class="pagination-controls">
                         <button class="prev-page-btn" data-table-id="languagesTable">&larr; Previous</button>
@@ -593,7 +581,6 @@ include 'header.php';
                 </div>
             </div>
 
-            <!-- Recent Password Reset Requests Table -->
             <div class="bg-white p-6 rounded-lg shadow-lg">
                 <div class="table-controls-header">
                     <h3 class="text-lg font-semibold text-gray-800">Recent Password Reset Requests</h3>
@@ -618,8 +605,7 @@ include 'header.php';
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <!-- Rows will be rendered by JavaScript -->
-                        </tbody>
+                            </tbody>
                     </table>
                     <div class="pagination-controls">
                         <button class="prev-page-btn" data-table-id="resetsTable">&larr; Previous</button>
@@ -629,7 +615,6 @@ include 'header.php';
                 </div>
             </div>
 
-            <!-- Daily Language Settings by Teacher Table -->
             <div class="bg-white p-6 rounded-lg shadow-lg">
                 <div class="table-controls-header">
                     <h3 class="text-lg font-semibold text-gray-800">Daily Language Settings by Teacher</h3>
@@ -653,8 +638,7 @@ include 'header.php';
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200">
-                            <!-- Rows will be rendered by JavaScript -->
-                        </tbody>
+                            </tbody>
                     </table>
                     <div class="pagination-controls">
                         <button class="prev-page-btn" data-table-id="dailyLangsTable">&larr; Previous</button>
@@ -667,12 +651,7 @@ include 'header.php';
     </div>
 </main>
 
-<!-- Closing tags for HTML structure initiated in header.php -->
-</div> <!-- Closes <div class="flex-1 flex flex-col overflow-hidden"> from header.php -->
-</div> <!-- Closes <div class="flex h-screen overflow-hidden"> from header.php -->
-
-<!-- Custom Success Modal HTML -->
-<div id="successModal" class="modal-overlay">
+</div> </div> <div id="successModal" class="modal-overlay">
     <div class="modal-box success-modal">
         <div class="icon-wrapper">
             <i class="fas fa-check-circle"></i>
@@ -687,7 +666,6 @@ include 'header.php';
     </div>
 </div>
 
-<!-- Custom Error Modal HTML (for immediate errors from POST, not redirects) -->
 <div id="errorModal" class="modal-overlay">
     <div class="modal-box error-modal">
         <div class="icon-wrapper">
@@ -881,13 +859,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (col.className) { // Apply specific class if provided
                         cell.className += ` ${col.className}`;
                     }
-
-                    // Directly set innerHTML for SVG/FontAwesome icons, assuming it's sanitized
-                    if (typeof content === 'string' && (content.includes('<svg') || content.includes('<i class="fas'))) {
+                    
+                    // ===================================================================
+                    // THE ONLY FIX IS HERE: The condition is updated to include '<span>'
+                    // ===================================================================
+                    if (typeof content === 'string' && (content.includes('<svg') || content.includes('<i class="fas') || content.includes('<span'))) {
                         cell.innerHTML = content;
                     } else {
                         cell.textContent = content; // Use textContent for plain text to prevent XSS
                     }
+                    // ===================================================================
+                    
                     row.appendChild(cell);
                 });
                 tbody.appendChild(row);
@@ -898,7 +880,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const totalPages = Math.ceil(filteredData.length / itemsPerPage);
             paginationNumbersDiv.innerHTML = ''; // Clear existing page numbers
 
-            // Limit visible page numbers for better UX
             let startPageNum = Math.max(1, currentPage - 2);
             let endPageNum = Math.min(totalPages, currentPage + 2);
 
@@ -933,8 +914,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 prevButton.classList.toggle('opacity-50', currentPage === 1);
             }
             if (nextButton) {
-                nextButton.disabled = currentPage === totalPages;
-                nextButton.classList.toggle('opacity-50', currentPage === totalPages);
+                nextButton.disabled = currentPage === totalPages || totalPages === 0;
+                nextButton.classList.toggle('opacity-50', currentPage === totalPages || totalPages === 0);
             }
         }
 
@@ -974,7 +955,6 @@ document.addEventListener('DOMContentLoaded', () => {
             link.click();
             document.body.removeChild(link);
         }
-
 
         // Event listeners
         if (searchInput) {
@@ -1018,7 +998,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { header: 'Added By', dataKey: 'added_by', className: 'text-gray-500' },
         { header: 'Date Added', dataKey: 'date_added', className: 'text-gray-500',
           render: (item) => new Date(item.date_added).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-          exportRender: (item) => new Date(item.date_added).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) // For export without AM/PM
+          exportRender: (item) => item.date_added
         },
     ];
     const phpAllLanguagesData = <?php echo json_encode($all_languages_data); ?>;
@@ -1031,20 +1011,20 @@ document.addEventListener('DOMContentLoaded', () => {
         { header: 'Email', dataKey: 'email', className: 'text-gray-500' },
         { header: 'Request Date', dataKey: 'request_date', className: 'text-gray-500',
           render: (item) => new Date(item.request_date).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }),
-          exportRender: (item) => new Date(item.request_date).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+          exportRender: (item) => item.request_date
         },
         {
-            header: 'Status', dataKey: 'status',
-            render: (item) => {
-                let statusClass = '';
-                switch (item.status.toLowerCase()) {
-                    case 'pending': statusClass = 'pending'; break;
-                    case 'expired': statusClass = 'expired'; break; // Assuming 'Expired' can also be a status
-                    default: statusClass = 'bg-gray-100 text-gray-800'; break;
-                }
-                return `<span class="status-badge ${statusClass}">${item.status}</span>`;
-            },
-            exportRender: (item) => item.status // Export plain text status
+          header: 'Status', dataKey: 'status',
+          render: (item) => {
+              let statusClass = '';
+              switch (item.status.toLowerCase()) {
+                  case 'pending': statusClass = 'pending'; break;
+                  case 'expired': statusClass = 'expired'; break;
+                  default: statusClass = 'failed'; break;
+              }
+              return `<span class="status-badge ${statusClass}">${item.status}</span>`;
+          },
+          exportRender: (item) => item.status
         },
     ];
     const phpRecentPasswordResetsData = <?php echo json_encode($recent_password_resets_data); ?>;
@@ -1055,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dailyLangsColumns = [
         { header: 'Date Set', dataKey: 'setting_date', className: 'text-gray-500',
           render: (item) => new Date(item.setting_date).toLocaleString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }),
-          exportRender: (item) => new Date(item.setting_date).toISOString().slice(0, 10) //YYYY-MM-DD for export
+          exportRender: (item) => item.setting_date
         },
         { header: 'Teacher', dataKey: 'teacher_username', className: 'font-medium text-gray-900' },
         { header: 'Language', dataKey: 'language_name', className: 'text-gray-500' },

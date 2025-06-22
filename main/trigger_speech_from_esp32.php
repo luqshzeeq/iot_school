@@ -24,15 +24,14 @@ if ($receivedApiKey !== $expectedApiKey || $receivedDeviceId !== $expectedDevice
 }
 
 // --- Define the path to your Python executable and script ---
-$python_executable = '/usr/bin/python3'; // Common path for Python 3 on Linux
-// On Windows: $python_executable = 'C:\xampp\php\python.exe'; // IMPORTANT: Adjust this path to your Python executable!
-                                                              // E.g., C:\Python39\python.exe or C:\Users\YourUser\AppData\Local\Programs\Python\Python39\python.exe
-$python_script_path = __DIR__ . '/language_monitor.py'; // Assumes script is in the same directory
+$python_executable = 'C:\\Users\\luqma\\AppData\\Local\\Programs\\Python\\Python310\\python.exe'; 
 
-// --- Optional: Set Google Cloud Credentials Environment Variable ---
-// If you are using Google Cloud Speech-to-text API with a service account key
-// ensure the path below is correct for your service account JSON file.
-// putenv("GOOGLE_APPLICATION_CREDENTIALS=/full/path/to/your/service-account-key.json");
+// CORRECTED LINE: If language_monitor.py is in the same directory as this PHP file
+$python_script_path = __DIR__ . '\\language_monitor.py'; 
+// If your system uses forward slashes in paths like some PHP setups, you might use:
+// $python_script_path = __DIR__ . '/language_monitor.py'; 
+// Both usually work on Windows for PHP paths, but '\\' is more explicit for Windows.
+
 
 // --- Construct the command to execute the Python script ---
 $command = escapeshellcmd("{$python_executable} {$python_script_path}");
@@ -40,9 +39,9 @@ $command = escapeshellcmd("{$python_executable} {$python_script_path}");
 // --- Execute the Python script and capture its output ---
 // Use proc_open to capture both standard output (stdout) and standard error (stderr)
 $descriptorspec = array(
-   0 => array("pipe", "r"),  // stdin
-   1 => array("pipe", "w"),  // stdout
-   2 => array("pipe", "w")   // stderr
+   0 => array("pipe", "r"),   // stdin
+   1 => array("pipe", "w"),   // stdout
+   2 => array("pipe", "w")    // stderr
 );
 $process = proc_open($command, $descriptorspec, $pipes);
 
@@ -77,3 +76,4 @@ if ($return_code !== 0) { // Python script returned a non-zero exit code (indica
 
 echo json_encode($response_to_esp32);
 exit();
+?>
