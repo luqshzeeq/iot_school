@@ -390,7 +390,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                             <p class="text-dark mb-0">
                                 Don't have account?<a class="text-primary ml-1" href="register.php"> Register</a>
                             </p>
-                        </div>
+                            <p class="mb-0 mt-2">
+                                <a href="trigger_webpage.php" class="text-primary">
+                                    <i class="bi bi-mic-fill"></i> Speak Order
+                                </a>
+                            </p>
+                            </div>
                     </form>
 
                     <div class="card-body border-top-0 pb-6 pt-2">

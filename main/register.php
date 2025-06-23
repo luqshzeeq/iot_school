@@ -334,7 +334,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     // PHP variable to determine if registration was successful
     const registrationSuccess = <?php echo json_encode($registration_success); ?>;
-    const registrationCustomMessage = "Welcome to the Nodepay Network"; // Message from your image
+    
 
     if (registrationSuccess) {
         // Set the custom message (or use default if dynamic from PHP is not needed)

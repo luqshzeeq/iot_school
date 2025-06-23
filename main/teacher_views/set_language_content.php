@@ -315,7 +315,7 @@ if (isset($conn)) {
 
 <div class="card mb-6">
     <div class="card-header">
-        <h3 class="text-xl font-semibold text-gray-800">Global Daily Language Settings History</h3>
+        <h3 class="text-xl font-semibold text-gray-800">Daily Language Settings History</h3>
     </div>
     <div class="card-body">
         <?php if (!empty($teacher_daily_languages_records)): ?>

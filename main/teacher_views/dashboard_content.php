@@ -150,7 +150,7 @@
                 </div>
                 <div id="calendarDaysGrid" class="calendar-grid">
                     </div>
-                <p class="text-xs text-gray-500 mt-4 text-center">View important dates or activity at a glance.</p>
+                
             </div>
         </div>
     </div>
@@ -163,8 +163,7 @@
             <div class="w-full h-72 rounded-lg flex items-center justify-center">
                 <canvas id="languageTrendChart"></canvas>
             </div>
-            <p class="text-xs text-gray-500 mt-2 text-center">This chart shows your language settings from Monday to Friday this week.</p>
-        </div>
+            
     </div>
 </div>
 
