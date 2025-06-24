@@ -280,7 +280,7 @@ include 'header.php';
         
         <section id="daily-language-settings" class="mb-12">
             <div class="bg-white p-6 rounded-lg shadow-lg">
-                <h2 class="text-xl font-semibold text-gray-700 mb-4">Daily Language Settings (Last 7 Days)</h2>
+                <h2 class="text-xl font-semibold text-gray-700 mb-4">Daily Language Settings </h2>
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -381,10 +381,55 @@ include 'header.php';
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- (Your existing JavaScript for charts etc. would go here) ...
+  const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const mobileSidebarToggle = document.getElementById('mobileSidebarToggle');
+        const sidebarTexts = sidebar ? sidebar.querySelectorAll('.sidebar-text') : [];
 
-    // --- NEW AND IMPROVED JAVASCRIPT ---
+        function toggleSidebarDesktop() {
+            if (!sidebar || !sidebarToggle) return;
+            const toggleIcon = sidebarToggle.querySelector('i');
+            sidebar.classList.toggle('w-64');
+            sidebar.classList.toggle('w-20');
+            const isCollapsed = sidebar.classList.contains('w-20');
+            sidebarTexts.forEach(text => text.classList.toggle('hidden', isCollapsed));
+            if (toggleIcon) {
+                toggleIcon.classList.toggle('fa-chevron-left', !isCollapsed);
+                toggleIcon.classList.toggle('fa-chevron-right', isCollapsed);
+                toggleIcon.title = isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar';
+            }
+        }
 
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', toggleSidebarDesktop);
+            // Initial state based on class (optional, if you want it to remember state via class)
+            const isCollapsed = sidebar.classList.contains('w-20');
+            const toggleIcon = sidebarToggle.querySelector('i');
+            if (toggleIcon) {
+                toggleIcon.classList.toggle('fa-chevron-left', !isCollapsed);
+                toggleIcon.classList.toggle('fa-chevron-right', isCollapsed);
+                toggleIcon.title = isCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar';
+            }
+        }
+
+        if (mobileSidebarToggle && sidebar) {
+            sidebar.classList.add('fixed', 'inset-y-0', 'left-0', 'z-30', 'lg:translate-x-0', 'lg:static', 'lg:inset-auto', '-translate-x-full');
+            mobileSidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sidebar.classList.toggle('-translate-x-full');
+                sidebar.classList.toggle('translate-x-0');
+                // When mobile sidebar opens, ensure it's full width and texts are visible
+                sidebar.classList.add('w-64');
+                sidebar.classList.remove('w-20');
+                sidebarTexts.forEach(text => text.classList.remove('hidden'));
+            });
+            document.addEventListener('click', (e) => {
+                if (sidebar && !sidebar.contains(e.target) && !mobileSidebarToggle.contains(e.target) && sidebar.classList.contains('translate-x-0') && window.innerWidth < 1024) {
+                    sidebar.classList.add('-translate-x-full');
+                    sidebar.classList.remove('translate-x-0');
+                }
+            });
+        }
     // 1. Logic to handle the delete button click
     const deleteButtons = document.querySelectorAll('.delete-language-button');
     deleteButtons.forEach(button => {
@@ -396,12 +441,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (deleteForm) {
                 Swal.fire({
                     title: 'Are you sure?',
-                    text: `You are about to delete "${languageName}". This action cannot be undone.`,
+                    text: `You are about to delete "${languageName}". `,
                     icon: 'warning',
                     showCancelButton: true,
                     confirmButtonColor: '#d33',
                     cancelButtonColor: '#3085d6',
-                    confirmButtonText: 'Yes, delete it!'
+                    confirmButtonText: 'Delete'
                 }).then((result) => {
                     if (result.isConfirmed) {
                         deleteForm.submit();
@@ -433,7 +478,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+
+
 </script>
 
 </body>
+
 </html>

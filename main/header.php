@@ -1,13 +1,32 @@
 <?php
 // This file contains the standardized header for all admin pages.
 // session_start() is expected to be called by the including page (e.g., admin_manage_users.php)
+
+// Placeholder for notification data (you would fetch this from your database)
+// Example: Fetch pending password reset requests as notifications
+$pending_password_resets_count = 0;
+$pending_password_resets = [];
+
+if (isset($conn) && $conn) { // Ensure $conn is available from the including script
+    $stmt = $conn->prepare("SELECT u.username, pr.email, pr.expires_at 
+                            FROM password_resets pr 
+                            JOIN users u ON pr.email = u.email 
+                            WHERE pr.expires_at > NOW() 
+                            ORDER BY pr.expires_at DESC LIMIT 5"); // Get up to 5 recent pending requests
+    if ($stmt) {
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $pending_password_resets = $result->fetch_all(MYSQLI_ASSOC);
+        $pending_password_resets_count = count($pending_password_resets);
+        $stmt->close();
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- The Title will be set on each individual page via JavaScript or PHP variable -->
     <link rel="icon" type="image/png" href="/assets/images/brand/adminlogo.jpg">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
@@ -21,11 +40,16 @@
         #sidebar { height: 100vh; display: flex; flex-direction: column; }
         @media (max-width: 1023px) { #sidebar { position: fixed; top: 0; left: 0; z-index: 40; } }
 
-        /* --- STYLES FOR THE CORRECT DROPDOWN MENU --- */
+        /* --- STYLES FOR DROPDOWN MENUS (both user and new notification) --- */
+        .dropdown-container {
+            position: relative; /* Make container relative for absolute positioning of dropdown */
+            display: inline-block;
+        }
+
         .dropdown-menu {
             position: absolute;
             right: 0;
-            top: calc(100% + 0.5rem); /* Position below the button */
+            top: calc(100% + 1rem); /* Position below the button */
             background-color: white;
             border-radius: 0.5rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
@@ -62,6 +86,44 @@
             margin-right: 0.75rem;
             color: #9ca3af;
             width: 1.25rem; /* Consistent icon spacing */
+        }
+        /* Specific styles for notification items */
+        .notification-item {
+            display: block;
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #f3f4f6;
+            font-size: 0.875rem;
+            color: #4b5563;
+            text-decoration: none;
+        }
+        .notification-item:last-child {
+            border-bottom: none;
+        }
+        .notification-item:hover {
+            background-color: #f9fafb;
+        }
+        .notification-item strong {
+            color: #1f2937;
+        }
+        .notification-item span {
+            font-size: 0.75rem;
+            color: #6b7280;
+            display: block;
+            margin-top: 0.25rem;
+        }
+        .notification-count {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background-color: #ef4444; /* Red color */
+            color: white;
+            font-size: 0.7rem;
+            font-weight: bold;
+            border-radius: 9999px; /* Full rounded */
+            padding: 0.1rem 0.4rem;
+            line-height: 1;
+            min-width: 18px; /* Ensures minimum size for single digits */
+            text-align: center;
         }
 
         /* Styles for the common modal structure (used by delete, success, and logout) */
@@ -115,23 +177,9 @@
         .modal-box .icon-wrapper i {
             font-size: 2rem; /* text-4xl */
         }
-
-        /* Specific overrides for other modals if needed (e.g., delete modal icon) */
-        /* If you want delete/success icons to have different colors, define them here explicitly: */
-        /*
-        .delete-modal .icon-wrapper {
-            background-color: #fee2e2;
-            color: #ef4444;
-        }
-        .success-modal .icon-wrapper {
-            background-color: #d1fae5;
-            color: #10b981;
-        }
-        */
     </style>
 </head>
-<body> <!-- Body tag starts here, closed at the very end of this file -->
-
+<body>
 <div class="flex h-screen overflow-hidden">
     <?php include 'sidebar.php'; ?>
 
@@ -143,56 +191,73 @@
                     <h1 id="page-title" class="text-xl font-semibold text-gray-800 hidden lg:block">Admin Dashboard</h1>
                 </div>
 
-                <!-- --- THE CORRECT DROPDOWN HTML --- -->
-                <div class="relative inline-block text-left">
-                    <button id="userMenuButton" type="button" class="flex items-center space-x-2 p-1 border-2 border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        <div class="h-10 w-10 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center">
-                            <!-- Dynamically display first letter of username -->
-                            <span class="font-semibold text-gray-600"><?php echo htmlspecialchars(strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1))); ?></span>
+                <div class="flex items-center space-x-6">
+
+                    <div class="dropdown-container">
+                        <button id="notificationMenuButton" type="button" class="relative p-2 text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 rounded-full">
+                            <i class="fas fa-bell text-lg"></i>
+                            <?php if ($pending_password_resets_count > 0): ?>
+                                <span class="notification-count"><?php echo $pending_password_resets_count; ?></span>
+                            <?php endif; ?>
+                        </button>
+                        <div id="notificationDropdownMenu" class="dropdown-menu w-72"> <div class="dropdown-header">
+                                <p class="font-semibold text-sm text-gray-800">Notifications</p>
+                            </div>
+                            <div class="py-1 max-h-60 overflow-y-auto"> <?php if (!empty($pending_password_resets)): ?>
+                                    <?php foreach ($pending_password_resets as $reset): ?>
+                                        <a href="#" class="notification-item">
+                                            <strong>Password Reset Request</strong>
+                                            <span>User: <?php echo htmlspecialchars($reset['username'] ?? 'N/A'); ?></span>
+                                            <span>Email: <?php echo htmlspecialchars($reset['email']); ?></span>
+                                            <span class="text-xs text-gray-400">Expires: <?php echo htmlspecialchars(date('M d, Y H:i', strtotime($reset['expires_at']))); ?></span>
+                                        </a>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <p class="text-center text-gray-500 py-4 text-sm">No new notifications.</p>
+                                <?php endif; ?>
+                            </div>
+                            <?php if ($pending_password_resets_count > 0): ?>
+                            <div class="dropdown-footer text-center border-t border-gray-100 mt-1 pt-2">
+                                <a href="#" class="text-indigo-600 hover:text-indigo-800 text-sm">View All Notifications</a>
+                            </div>
+                            <?php endif; ?>
                         </div>
-                        <i id="userMenuChevron" class="fas fa-chevron-down text-gray-500 text-xs ml-1 transition-transform duration-200"></i>
-                    </button>
-                    <div id="userDropdownMenu" class="dropdown-menu">
-                        <div class="dropdown-header">
-                            <p class="font-semibold text-sm text-gray-800"><?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin User'); ?></p>
-                            <p class="text-xs text-gray-500 truncate"><?php echo htmlspecialchars($_SESSION['email'] ?? 'admin@example.com'); ?></p>
-                        </div>
-                        <div class="py-1">
-                            <a href="/admin/profile.php" class="dropdown-item">
-                                <i class="fas fa-user-edit"></i> Edit profile
-                            </a>
-                            <a href="/admin/settings.php" class="dropdown-item">
-                                <i class="fas fa-cog"></i> Account settings
-                            </a>
-                        </div>
-                        <div class="border-t border-gray-200"></div>
-                        <div class="py-1">
-                            <!-- Change this to a button or span to trigger the modal -->
-                            <a href="logout_admin.php" id="logoutTrigger" class="dropdown-item text-red-600">
-                                <i class="fas fa-sign-out-alt"></i> Sign out
-                            </a>
+                    </div>
+
+                    <div class="dropdown-container">
+                        <button id="userMenuButton" type="button" class="flex items-center space-x-2 p-1 border-2 border-transparent rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                            <div class="h-10 w-10 rounded-full overflow-hidden bg-gray-200 flex items-center justify-center">
+                                <span class="font-semibold text-gray-600"><?php echo htmlspecialchars(strtoupper(substr($_SESSION['username'] ?? 'A', 0, 1))); ?></span>
+                            </div>
+                            <i id="userMenuChevron" class="fas fa-chevron-down text-gray-500 text-xs ml-1 transition-transform duration-200"></i>
+                        </button>
+                        <div id="userDropdownMenu" class="dropdown-menu">
+                            <div class="dropdown-header">
+                                <p class="font-semibold text-sm text-gray-800"><?php echo htmlspecialchars($_SESSION['username'] ?? 'Admin User'); ?></p>
+                                <p class="text-xs text-gray-500 truncate"><?php echo htmlspecialchars($_SESSION['email'] ?? 'adminsystem@gmail.com'); ?></p>
+                            </div>
+
+                            <div class="py-1">
+                                <a href="logout_admin.php" id="logoutTrigger" class="dropdown-item text-red-600">
+                                    <i class="fas fa-sign-out-alt"></i> Sign out
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </header>
 
-        <!-- The main content area placeholder. Actual content will be included by the calling page. -->
-        <!-- This div remains open, to be closed by the including page (e.g., admin_manage_users.php) -->
-        <!-- <main> tag and its content are part of the including page. -->
-
-<!-- Logout Confirmation Modal HTML -->
-<div id="logoutModal" class="modal-overlay">
+        <div id="logoutModal" class="modal-overlay">
     <div class="modal-box logout-modal">
         <div class="icon-wrapper">
-            <!-- Icon resembling the image: a door with an arrow -->
             <svg class="h-14 w-14" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
             </svg>
         </div>
-        <h3 class="text-xl font-bold text-gray-900 mb-2">Oh no! You're leaving...</h3>
+        <h3 class="text-xl font-bold text-gray-900 mb-2">Sign Out</h3>
         <p class="text-sm text-gray-500 mb-6">
-            Are you sure?
+            Are you sure you want to sign out?
         </p>
         <div class="flex flex-col space-y-3">
             <button id="cancelLogoutButton" class="w-full border border-blue-500 py-2 px-4 rounded-md bg-white hover:bg-blue-50 text-blue-600 font-semibold transition duration-150 ease-in-out">
@@ -218,45 +283,78 @@
                 userDropdownMenu.classList.toggle('active');
                 userMenuChevron.classList.toggle('fa-chevron-down');
                 userMenuChevron.classList.toggle('fa-chevron-up');
-            });
 
-            // Close the dropdown if the user clicks outside of it
-            document.addEventListener('click', (e) => {
-                if (!userMenuButton.contains(e.target) && !userDropdownMenu.contains(e.target)) {
-                    if (userDropdownMenu.classList.contains('active')) {
-                        userDropdownMenu.classList.remove('active');
-                        userMenuChevron.classList.remove('fa-chevron-up');
-                        userMenuChevron.classList.add('fa-chevron-down');
-                    }
+                // Close notification dropdown if open
+                const notificationDropdownMenu = document.getElementById('notificationDropdownMenu');
+                if (notificationDropdownMenu && notificationDropdownMenu.classList.contains('active')) {
+                    notificationDropdownMenu.classList.remove('active');
+                    // Reset notification button icon if it had a chevron/rotation
+                    // const notificationMenuChevron = document.getElementById('notificationMenuChevron'); // if you add one
+                    // if (notificationMenuChevron) { /* reset icon */ }
                 }
             });
         }
 
+        // NEW: Notification dropdown functionality
+        const notificationMenuButton = document.getElementById('notificationMenuButton');
+        const notificationDropdownMenu = document.getElementById('notificationDropdownMenu');
+        // No chevron for notification bell icon, so no rotation logic needed for icon itself
+
+        if (notificationMenuButton && notificationDropdownMenu) {
+            notificationMenuButton.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent document click from closing it immediately
+                notificationDropdownMenu.classList.toggle('active');
+
+                // Close user dropdown if open
+                if (userDropdownMenu.classList.contains('active')) {
+                    userDropdownMenu.classList.remove('active');
+                    userMenuChevron.classList.remove('fa-chevron-up');
+                    userMenuChevron.classList.add('fa-chevron-down');
+                }
+            });
+        }
+
+        // Close ALL dropdowns if the user clicks outside of them
+        document.addEventListener('click', (e) => {
+            // Close User Dropdown
+            if (userMenuButton && userDropdownMenu && !userMenuButton.contains(e.target) && !userDropdownMenu.contains(e.target)) {
+                if (userDropdownMenu.classList.contains('active')) {
+                    userDropdownMenu.classList.remove('active');
+                    userMenuChevron.classList.remove('fa-chevron-up');
+                    userMenuChevron.classList.add('fa-chevron-down');
+                }
+            }
+            // Close Notification Dropdown
+            if (notificationMenuButton && notificationDropdownMenu && !notificationMenuButton.contains(e.target) && !notificationDropdownMenu.contains(e.target)) {
+                if (notificationDropdownMenu.classList.contains('active')) {
+                    notificationDropdownMenu.classList.remove('active');
+                }
+            }
+        });
+
         // --- Logout Confirmation Modal Logic ---
-        const logoutTrigger = document.getElementById('logoutTrigger'); // The "Sign out" link in the dropdown
+        const logoutTrigger = document.getElementById('logoutTrigger');
         const logoutModal = document.getElementById('logoutModal');
         const confirmLogoutButton = document.getElementById('confirmLogoutButton');
         const cancelLogoutButton = document.getElementById('cancelLogoutButton');
 
         if (logoutTrigger && logoutModal && confirmLogoutButton && cancelLogoutButton) {
             logoutTrigger.addEventListener('click', (e) => {
-                e.preventDefault(); // Prevent default link behavior (navigating immediately)
-                userDropdownMenu.classList.remove('active'); // Close the user dropdown menu
-                logoutModal.classList.add('active'); // Show the logout modal
+                e.preventDefault();
+                userDropdownMenu.classList.remove('active'); // Close user dropdown
+                logoutModal.classList.add('active'); // Show logout modal
             });
 
             cancelLogoutButton.addEventListener('click', () => {
-                logoutModal.classList.remove('active'); // Hide the modal
+                logoutModal.classList.remove('active');
             });
 
             confirmLogoutButton.addEventListener('click', () => {
-                // If confirmed, navigate to the logout page
-                window.location.href = logoutTrigger.href; // Use the href from the original link
+                window.location.href = logoutTrigger.href;
             });
 
-            // Close modal if overlay is clicked
             logoutModal.addEventListener('click', (e) => {
-                if (e.target === logoutModal) { // Check if the click was directly on the overlay
+                if (e.target === logoutModal) {
                     logoutModal.classList.remove('active');
                 }
             });

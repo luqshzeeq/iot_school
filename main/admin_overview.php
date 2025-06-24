@@ -533,7 +533,7 @@ include 'header.php';
                 </div>
             </div>
             <div class="chart-container flex flex-col items-center">
-                <h3 class="text-lg font-semibold text-gray-800 mb-4">Device Status</h3>
+                <h3 class="text-lg font-semibold text-gray-800 mb-4">Device Status (ESP32)</h3>
                 <div class="relative w-full max-w-xs h-auto aspect-square">
                     <canvas id="deviceStatusChart"></canvas>
                 </div>
@@ -541,7 +541,7 @@ include 'header.php';
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">New Teacher Registrations (Last 7 Days)</h3><canvas id="userWeeklyChart"></canvas></div>
+            <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">New Teacher Registrations</h3><canvas id="userWeeklyChart"></canvas></div>
             <div class="chart-container"><h3 class="text-lg font-semibold text-center text-gray-800 mb-4">Languages Added (<?php echo $current_year; ?>)</h3><canvas id="langWeeklyChart"></canvas></div>
         </div>
         
