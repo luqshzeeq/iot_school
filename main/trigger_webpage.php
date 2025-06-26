@@ -67,7 +67,7 @@
 <body class="flex items-center justify-center min-h-screen bg-gray-100">
     <div class="bg-white p-8 rounded-lg shadow-xl text-center max-w-md w-full">
         <h1 class="text-3xl font-bold text-gray-800 mb-6"> Language Monitor</h1>
-        <p class="text-gray-600 mb-8">Click 'Start Order' or " Press Shift + Enter"  and speak your order in the expected language.</p>
+        <p class="text-gray-600 mb-8">Click 'Start' or " Press Shift + Enter" and speak your order in the expected language.</p>
 
         <p id="expectedLanguageDisplay" class="text-xl font-semibold text-purple-700 mb-4">
             Today's Language: Loading...
@@ -135,44 +135,32 @@
             }
             
             function filterPythonOutputForStudent(fullOutput) {
-                if (!fullOutput) return '';
-                let lines = fullOutput.split('\n');
-                let filteredLines = [];
-                const linesToExcludeStartWith = [
-                    'Script started.',
-                    'DB DEBUG:',
-                    'DB ERROR:',
-                    'Found daily language:',
-                    'Today is ',
-                    'Please speak your order...',
-                    'Listening...',
-                    'Audio captured. Processing...',
-                    'Sent result ',
-                    'Language usage logged',
-                    'Student interaction logged',
-                    'An unexpected error occurred:',
-                    'INSERT INTO',
-                    'VALUES (%s,',
-                    'EXPECTED_LANGUAGE_IS:',
-                    'ERROR: Could not send result to ESP32',
-                    'HTTPConnectionPool',
-                    'ConnectTimeoutError',
-                    'Connection to '
-                ];
-                for (let line of lines) {
-                    let shouldExclude = false;
-                    let trimmedLine = line.trim();
-                    for (let excludePhrase of linesToExcludeStartWith) {
-                        if (trimmedLine.startsWith(excludePhrase)) {
-                            shouldExclude = true;
-                            break;
-                        }
-                    }
-                    if (!shouldExclude && trimmedLine !== '') {
-                        filteredLines.push(line);
+                // If there is no output from the script, show the default message.
+                if (!fullOutput) {
+                    return 'Waiting for interaction...';
+                }
+
+                const lines = fullOutput.split('\n');
+                const linesToKeep = [];
+
+                // Loop through each line of the Python script's output.
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    
+                    // Only keep the line if it starts with "Transcription" or "FINAL FEEDBACK:".
+                    if (trimmedLine.startsWith('Transcription') || trimmedLine.startsWith('FINAL FEEDBACK:')) {
+                        linesToKeep.push(trimmedLine);
                     }
                 }
-                return filteredLines.filter(line => line.trim() !== '').join('\n');
+
+                // Join the kept lines together with a newline.
+                // If no lines were kept (e.g., an error occurred before transcription),
+                // a message will point the user to the main status display.
+                if (linesToKeep.length > 0) {
+                    return linesToKeep.join('\n');
+                } else {
+                    return 'See main status above for result.';
+                }
             }
 
             function getExpectedLanguage() {
@@ -217,6 +205,7 @@
                         let icon = 'fa-check-circle';
                         let color = 'text-green-600';
 
+                        // --- FINAL ROBUST LOGIC BLOCK ---
                         if (pythonOutput.includes('No speech detected within timeout')) {
                             displayMessage = 'No speech detected. Please try again.';
                             icon = 'fa-times-circle';
@@ -225,29 +214,33 @@
                             displayMessage = 'Microphone error on server. Check server console.';
                             icon = 'fa-times-circle';
                             color = 'text-red-600';
+                        } else if (pythonOutput.includes('Transcription')) {
+                            
+                            if (pythonOutput.includes('Correct!')) {
+                                displayMessage = 'Correct! You spoke in the expected language.';
+                                icon = 'fa-check-circle';
+                                color = 'text-green-600';
+                            } else if (pythonOutput.includes('Wrong language')) {
+                                displayMessage = 'Wrong language detected. Please try again.';
+                                icon = 'fa-times-circle';
+                                color = 'text-red-600';
+                            } else {
+                                displayMessage = 'Audio processed, but feedback is unclear.';
+                                icon = 'fa-info-circle';
+                                color = 'text-blue-600';
+                            }
+
                         } else if (pythonOutput.includes('Could not understand audio')) {
                             displayMessage = 'Could not understand. Please speak clearer.';
                             icon = 'fa-question-circle';
                             color = 'text-yellow-600';
-                        } else if (pythonOutput.includes('Transcribed:')) {
-                            let transcribedText = pythonOutput.match(/Transcribed: (.*)/)?.[1] || 'N/A';
-                            let feedbackMsg = pythonOutput.match(/(Correct! You spoke in .*|Wrong language. Please speak in .*|Acceptable phrase in .*)/)?.[1] || '';
-                            displayMessage = `${feedbackMsg}\nTranscribed: "${transcribedText}"`;
-                            if (feedbackMsg.includes('Wrong language')) {
-                                icon = 'fa-times-circle';
-                                color = 'text-red-600';
-                            } else if (feedbackMsg.includes('Correct!') || feedbackMsg.includes('Acceptable phrase')) {
-                                icon = 'fa-check-circle';
-                                color = 'text-green-600';
-                            } else {
-                                icon = 'fa-info-circle';
-                                color = 'text-blue-600';
-                            }
                         } else {
                             displayMessage = 'An issue occurred. Check full output.';
                             icon = 'fa-info-circle';
                             color = 'text-blue-600';
                         }
+                        // --- END OF FINAL LOGIC ---
+
                         updateStatusDisplay(icon, displayMessage, color);
                         $('#filteredOutputText').text(filterPythonOutputForStudent(pythonOutput));
                     },

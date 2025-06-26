@@ -8,6 +8,7 @@
 $selected_date_str_display = isset($selected_date_str) ? htmlspecialchars($selected_date_str) : date('Y-m-d');
 $available_languages_list = is_array($available_languages ?? null) ? $available_languages : [];
 $csrf_token = $_SESSION['csrf_token'] ?? ''; // CSRF token should be set in teacher_dashboard.php
+$teacher_id = $_SESSION['user_id'] ?? 0; // Ensure teacher_id is available for requests
 
 // Ensure database connection is successful. This check is crucial.
 if (!isset($conn) || !$conn) {
@@ -21,9 +22,9 @@ if (!isset($conn) || !$conn) {
 $current_lang_id = ''; // Initialize
 $date_for_current_lang_fetch = isset($_GET['selected_date_str']) ? $_GET['selected_date_str'] : date('Y-m-d');
 $sql_current_setting_for_dropdown = "SELECT l.id, l.language_name
-                                   FROM teacher_daily_languages tdl
-                                   JOIN languages l ON tdl.language_id = l.id
-                                   WHERE tdl.setting_date = ?";
+                                     FROM teacher_daily_languages tdl
+                                     JOIN languages l ON tdl.language_id = l.id
+                                     WHERE tdl.setting_date = ?";
 $stmt_fetch_lang_for_dropdown = $conn->prepare($sql_current_setting_for_dropdown);
 if ($stmt_fetch_lang_for_dropdown) {
     $stmt_fetch_lang_for_dropdown->bind_param("s", $date_for_current_lang_fetch);
@@ -54,7 +55,7 @@ if ($result_daily_langs_table) {
     while ($row = $result_daily_langs_table->fetch_assoc()) {
         $set_by_username_display = htmlspecialchars($row['set_by_username'] ?? 'Unknown');
         if ($row['set_by_username'] === NULL && $row['set_by_teacher_id'] !== NULL) {
-             $set_by_username_display = 'Unknown (ID: ' . htmlspecialchars($row['set_by_teacher_id']) . ')';
+            $set_by_username_display = 'Unknown (ID: ' . htmlspecialchars($row['set_by_teacher_id']) . ')';
         }
         $teacher_daily_languages_records[] = [
             'setting_date' => htmlspecialchars($row['setting_date']),
@@ -67,11 +68,11 @@ if ($result_daily_langs_table) {
     error_log("Error fetching teacher daily languages for table in set_language_content.php: " . $conn->error);
 }
 
-// Unset session flags for success/error specific to language setting after display
-// This prevents the modal/banner from reappearing on simple page refresh
-$language_set_success = $_SESSION['language_set_success'] ?? false;
-$language_error_message = $_SESSION['language_error'] ?? '';
-unset($_SESSION['language_set_success'], $_SESSION['language_error']);
+// Get messages from language request process (these are handled by AJAX, not page reload)
+$request_success_message = $_SESSION['language_request_success'] ?? '';
+$request_error_message = $_SESSION['language_request_error'] ?? '';
+unset($_SESSION['language_request_success'], $_SESSION['language_request_error']);
+
 ?>
 
 <style>
@@ -220,54 +221,102 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
     .delete-btn { color: #9ca3af; }
     .delete-btn:hover { background-color: #fee2e2; color: #ef4444; }
 
+    /* New modal styles for request language */
+    /* NOTE: These styles are specific to the request language modal and are kept here.
+       The delete and success modals will now be handled by SweetAlert2, so their custom styles
+       is no longer needed in this file (if they were here previously). */
+    .request-modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+        opacity: 0;
+        visibility: hidden;
+        transition: opacity 0.3s ease, visibility 0.3s ease;
+    }
+    .request-modal-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+    .request-modal-box {
+        background-color: white;
+        padding: 2rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        text-align: center;
+        max-width: 450px; /* Slightly wider for forms */
+        width: 90%;
+        transform: translateY(-20px);
+        opacity: 0;
+        transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .request-modal-overlay.active .request-modal-box {
+        transform: translateY(0);
+        opacity: 1;
+    }
+    .request-modal-box .icon-wrapper {
+        background-color: #e0f2f7;
+        color: #2980b9;
+        border-radius: 9999px;
+        width: 56px;
+        height: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+    }
+    .request-modal-box .icon-wrapper i {
+        font-size: 2rem;
+    }
 </style>
 
 <div>
-    <div id="successModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-[9999] opacity-0 invisible transition-all duration-300 ease-out">
-        <div class="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full text-center transform scale-95 transition-all duration-300 ease-out">
-            <div class="mb-6 flex justify-center">
-                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-                    <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                    </svg>
+    <!-- The old successModal and deleteConfirmationModal HTML are removed here.
+         SweetAlert2 will dynamically create these modals. -->
+
+    <div id="requestLanguageModal" class="request-modal-overlay">
+        <div class="request-modal-box">
+            <div class="icon-wrapper">
+                <i class="fas fa-plus-circle"></i>
+            </div>
+            <h3 class="text-2xl font-bold text-gray-800 mb-4">Request New Language</h3>
+            <p class="text-gray-600 mb-6"></p> <form id="requestLanguageForm" class="space-y-4">
+                <input type="hidden" name="action" value="request_language">
+                <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
+                <input type="hidden" name="requested_by" value="<?php echo htmlspecialchars($teacher_id); ?>">
+                <div>
+                    <label for="new_language_name_input" class="block text-sm font-medium text-gray-700 text-left mb-1">Language Name:</label>
+                    <input type="text" id="new_language_name_input" name="language_name"
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="e.g., Japanese, French" required>
                 </div>
-            </div>
-            <h3 class="text-2xl font-bold text-gray-800 mb-2" id="modalTitle">Completed!</h3>
-            <p class="text-gray-600 mb-6" id="modalMessage">You have successfully set the language.</p>
-            <div class="flex justify-center space-x-4">
-                <button id="modalOkClose" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
-                    Close
-                </button>
-            </div>
+                <div class="flex justify-center space-x-4">
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition duration-150 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50">
+                        Submit
+                    </button>
+                    <button type="button" id="cancelRequestLanguageBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2.5 px-6 rounded-lg transition duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">
+                        Cancel
+                    </button>
+                </div>
+            </form>
+            <button type="button" id="closeRequestLanguageModalBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2.5 px-6 rounded-lg transition duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50 mt-4 hidden">
+                Close
+            </button>
         </div>
     </div>
-
-    <div id="deleteConfirmationModal" class="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center p-4 z-[9999] opacity-0 invisible transition-all duration-300 ease-out">
-        <div class="bg-white rounded-xl shadow-2xl p-8 max-w-sm w-full text-center transform scale-95 transition-all duration-300 ease-out">
-            <div class="mb-6 flex justify-center">
-                <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
-                    <svg class="w-10 h-10 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.332 16c-.77 1.333.192 3 1.732 3z"></path>
-                    </svg>
-                </div>
-            </div>
-            <h3 class="text-2xl font-bold text-gray-800 mb-2">Confirm Deletion</h3>
-            <p class="text-gray-600 mb-6" id="deleteModalMessage">Are you sure you want to delete the language setting for <span class="font-semibold text-red-700" id="deleteDateDisplay"></span>?</p>
-            <div class="flex justify-center space-x-4">
-                <button id="confirmDeleteBtn" class="bg-red-600 hover:bg-red-700 text-white font-medium py-2.5 px-6 rounded-lg transition duration-150 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50">
-                    Delete
-                </button>
-                <button id="cancelDeleteBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-medium py-2.5 px-6 rounded-lg transition duration-150 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-opacity-50">
-                    Cancel
-                </button>
-            </div>
-        </div>
-    </div>
-
 
     <div class="card bg-white shadow-md rounded-lg overflow-hidden mb-6">
-        <div class="card-header bg-gray-50 px-6 py-4 border-b border-gray-200">
+        <div class="card-header bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
             <h3 class="text-xl font-semibold text-gray-800">Set Language of the Day</h3>
+            <button id="openRequestLanguageModalBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-md shadow-sm flex items-center">
+                <i class="fas fa-plus-circle mr-2"></i>Request New Language
+            </button>
         </div>
         <div class="card-body p-6 md:p-8 w-full">
             <form method="POST" action="teacher_dashboard.php?page=set_language" id="dailyLanguageForm">
@@ -279,7 +328,7 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
                     <input type="date" id="setting_date_picker" name="setting_date"
                             value="<?php echo $selected_date_str_display; ?>"
                             class="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg shadow-sm
-                                    focus:ring-blue-500 focus:border-blue-500 text-base"
+                                   focus:ring-blue-500 focus:border-blue-500 text-base"
                             required>
                 </div>
 
@@ -289,7 +338,7 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
                     </label>
                     <select id="languageSelectPage" name="language_id"
                             class="w-full bg-white border border-gray-300 text-gray-900 px-4 py-2.5 rounded-lg shadow-sm
-                                    focus:ring-blue-500 focus:border-blue-500 text-base"
+                                   focus:ring-blue-500 focus:border-blue-500 text-base"
                             required
                             <?php echo empty($available_languages_list) ? 'disabled' : ''; ?>
                     >
@@ -302,19 +351,19 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
                                 </option>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <option value="" disabled>No languages available. Please add them via Admin panel.</option>
+                            <option value="" disabled>No languages available. Please request one!</option>
                         <?php endif; ?>
                     </select>
                     <?php if (empty($available_languages_list)): ?>
                         <p class="mt-2 text-sm text-red-600">
-                            No languages are configured. Please add languages in your admin settings.
+                            No languages are configured. Please request a new language using the button above.
                         </p>
                     <?php endif; ?>
                 </div>
 
                 <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg text-base
-                                            transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
-                                            flex items-center justify-center">
+                                             transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50
+                                             flex items-center justify-center">
                     <i class="fas fa-save mr-2"></i>Select
                 </button>
             </form>
@@ -390,92 +439,101 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const successModal = document.getElementById('successModal');
-        const modalTitle = document.getElementById('modalTitle');
-        const modalMessage = document.getElementById('modalMessage');
-        const modalOkClose = document.getElementById('modalOkClose');
-
-        const deleteConfirmationModal = document.getElementById('deleteConfirmationModal');
-        const deleteDateDisplay = document.getElementById('deleteDateDisplay');
-        const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
-        const cancelDeleteBtn = document.getElementById('cancelDeleteBtn');
-        let dateToDelete = '';
+        // ... (Existing variable declarations and event listeners for date picker, edit button, etc. remain the same) ...
 
         const settingDatePicker = document.getElementById('setting_date_picker');
         const selectedDateDisplay = document.getElementById('selectedDateDisplay');
         const languageSelectPage = document.getElementById('languageSelectPage');
 
-        // Function to show the modal with custom content
-        function showModal(title, message, isSuccess = true) {
-            modalTitle.textContent = title;
-            modalMessage.textContent = message;
+        // Request Language Modal elements (still using custom modal)
+        const openRequestLanguageModalBtn = document.getElementById('openRequestLanguageModalBtn');
+        const requestLanguageModal = document.getElementById('requestLanguageModal');
+        const cancelRequestLanguageBtn = document.getElementById('cancelRequestLanguageBtn');
+        const requestLanguageForm = document.getElementById('requestLanguageForm');
+        const newLanguageNameInput = document.getElementById('new_language_name_input');
+        const closeRequestLanguageModalBtn = document.getElementById('closeRequestLanguageModalBtn'); // New close button for request modal
 
-            // Adjust icon and colors based on success/error
-            const iconDiv = successModal.querySelector('.w-16.h-16');
-            const iconSvg = successModal.querySelector('svg');
+
+        // Function to show the request language modal with custom content (kept for this modal only)
+        function showRequestLanguageModal(title, message, isSuccess = true) {
+            const modalBox = requestLanguageModal.querySelector('.request-modal-box');
+            const modalBoxTitle = modalBox.querySelector('h3');
+            const modalBoxMessage = modalBox.querySelector('p:not([id])'); // Target the message <p>
+
+            if (modalBoxTitle) modalBoxTitle.textContent = title;
+            if (modalBoxMessage) modalBoxMessage.textContent = message;
+
+            const iconI = modalBox.querySelector('.icon-wrapper i.fas');
+            const iconDiv = iconI.closest('.icon-wrapper');
+            iconDiv.classList.remove('bg-red-100', 'bg-blue-100', 'bg-green-100');
+            iconI.classList.remove('fa-plus-circle', 'fa-check-circle', 'fa-times-circle');
+            iconI.classList.remove('text-blue-600', 'text-green-600', 'text-red-600');
 
             if (isSuccess) {
-                iconDiv.classList.remove('bg-red-100');
-                iconDiv.classList.add('bg-blue-100');
-                iconSvg.classList.remove('text-red-600');
-                iconSvg.classList.add('text-blue-600');
-                iconSvg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>'; // Checkmark
+                iconDiv.classList.add('bg-green-100');
+                iconI.classList.add('fa-check-circle', 'text-green-600');
             } else {
-                iconDiv.classList.remove('bg-blue-100');
                 iconDiv.classList.add('bg-red-100');
-                iconSvg.classList.remove('text-blue-600');
-                iconSvg.classList.add('text-red-600');
-                iconSvg.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2A9 9 0 111 12a9 9 0 0118 0z"></path>'; // X-mark or alert
+                iconI.classList.add('fa-times-circle', 'text-red-600');
             }
-
-            successModal.classList.remove('invisible', 'opacity-0');
-            successModal.classList.add('opacity-100');
-            successModal.querySelector('div').classList.remove('scale-95');
-            successModal.querySelector('div').classList.add('scale-100');
+            
+            requestLanguageModal.classList.remove('invisible', 'opacity-0');
+            requestLanguageModal.classList.add('active');
         }
 
-        // Function to hide the modal
-        function hideModal(modalElement) {
-            modalElement.classList.remove('opacity-100');
-            modalElement.classList.add('opacity-0');
-            modalElement.querySelector('div').classList.remove('scale-100');
-            modalElement.querySelector('div').classList.add('scale-95');
-
+        // Function to hide the request language modal
+        function hideRequestLanguageModal() {
+            requestLanguageModal.classList.remove('active');
             setTimeout(() => {
-                modalElement.classList.add('invisible');
+                requestLanguageModal.classList.add('invisible', 'opacity-0');
+
+                // Reset modal content to its original state
+                const modalBox = requestLanguageModal.querySelector('.request-modal-box');
+                const iconI = modalBox.querySelector('.icon-wrapper i.fas');
+                const titleH3 = modalBox.querySelector('h3');
+                const messageP = modalBox.querySelector('p:not([id])');
+
+                if (iconI) {
+                    iconI.classList.remove('fa-check-circle', 'fa-times-circle', 'text-green-600', 'text-red-600');
+                    iconI.classList.add('fa-plus-circle', 'text-blue-600'); // Default icon and color
+                    iconI.closest('.icon-wrapper').classList.remove('bg-green-100', 'bg-red-100');
+                    iconI.closest('.icon-wrapper').classList.add('bg-blue-100');
+                }
+                if (titleH3) titleH3.textContent = "Request New Language";
+                if (messageP) messageP.textContent = "";
+                if (requestLanguageForm) requestLanguageForm.style.display = 'block';
+                if (requestLanguageForm) requestLanguageForm.querySelector('button[type="submit"]').style.display = 'block';
+                if (requestLanguageForm) requestLanguageForm.querySelector('#cancelRequestLanguageBtn').style.display = 'block';
+                if (closeRequestLanguageModalBtn) closeRequestLanguageModalBtn.classList.add('hidden');
             }, 300);
         }
 
-        // Event listeners for modals
-        modalOkClose.addEventListener('click', () => hideModal(successModal));
-        successModal.addEventListener('click', function(event) {
-            if (event.target === successModal) {
-                hideModal(successModal);
-            }
-        });
-
-        // Trigger success modal if language was set successfully (from POST in teacher_dashboard.php)
+        // Trigger SweetAlert for success message if language was set successfully
         <?php if ($language_set_success): ?>
-            showModal(
-                "Completed!",
-                "You have successfully set the language for <?php echo $selected_date_str_display; ?>.",
-                true
-            );
+            Swal.fire({
+                title: "Completed!",
+                text: "You have successfully set the language for <?php echo $selected_date_str_display; ?>.",
+                icon: "success",
+                confirmButtonColor: '#2563eb', // Blue button for success
+                scrollbarPadding: false // <--- ADD THIS LINE
+            });
+            <?php unset($_SESSION['language_set_success']); // UNSET AFTER USE ?>
         <?php endif; ?>
 
-        // Trigger error modal if language setting failed (from POST in teacher_dashboard.php)
-        <?php if (!empty($language_error_message)): ?>
-            showModal(
-                "Error!",
-                "<?php echo htmlspecialchars($language_error_message); ?>",
-                false
-            );
+        // Trigger SweetAlert for error message if language setting failed
+        <?php if (!empty($language_error)): ?>
+            Swal.fire({
+                title: "Error!",
+                text: "<?php echo htmlspecialchars($language_error); ?>",
+                icon: "error",
+                confirmButtonColor: '#ef4444', // Red button for error
+                scrollbarPadding: false // <--- ADD THIS LINE
+            });
+            <?php unset($_SESSION['language_error']); // UNSET AFTER USE ?>
         <?php endif; ?>
-
 
         // Update the displayed date dynamically when the date picker changes
         settingDatePicker.addEventListener('change', function() {
-            // Reload the page to correctly populate the language dropdown for the new date
             window.location.href = `teacher_dashboard.php?page=set_language&selected_date_str=${this.value}`;
         });
 
@@ -493,10 +551,8 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
                 selectedDateDisplay.textContent = date;
                 languageSelectPage.value = langId;
 
-                // Scroll to the top of the form for better UX
                 document.getElementById('dailyLanguageForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-                // Optionally, highlight the form to indicate it's in "edit" mode
                 const formCard = document.querySelector('#dailyLanguageForm').closest('.card');
                 formCard.classList.add('ring-4', 'ring-blue-200');
                 setTimeout(() => {
@@ -505,58 +561,79 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
             });
         });
 
-        // --- Delete Button Logic ---
+        // --- Delete Button Logic with SweetAlert2 ---
         document.querySelectorAll('.delete-language-btn').forEach(button => {
             button.addEventListener('click', function() {
-                dateToDelete = this.dataset.date;
-                deleteDateDisplay.textContent = dateToDelete;
-                deleteConfirmationModal.classList.remove('invisible', 'opacity-0');
-                deleteConfirmationModal.classList.add('opacity-100');
-                deleteConfirmationModal.querySelector('div').classList.remove('scale-95');
-                deleteConfirmationModal.querySelector('div').classList.add('scale-100');
-            });
-        });
+                const dateToDelete = this.dataset.date; // Get the date from the button's data-date attribute
 
-        cancelDeleteBtn.addEventListener('click', () => hideModal(deleteConfirmationModal));
-
-        confirmDeleteBtn.addEventListener('click', function() {
-            hideModal(deleteConfirmationModal);
-
-            fetch('process_language_actions.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: new URLSearchParams({
-                    'action': 'delete',
-                    'setting_date': dateToDelete,
-                    'csrf_token': '<?php echo htmlspecialchars($csrf_token); ?>'
-                })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const contentType = response.headers.get("content-type");
-                if (contentType && contentType.indexOf("application/json") !== -1) {
-                    return response.json();
-                } else {
-                    return response.text().then(text => { throw new Error('Server response was not JSON: ' + text); });
-                }
-            })
-            .then(data => {
-                if (data.success) {
-                    showModal("Deleted!", data.message, true);
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    showModal("Error!", data.message, false);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showModal("Error!", "An unexpected error occurred. Please try again. (Details in console)", false);
+                Swal.fire({
+                    title: 'Are you sure?',
+                    html: `You are about to delete the language setting for <span class="font-semibold text-red-700">${dateToDelete}</span>. This action cannot be undone.`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc2626', // Tailwind red-600
+                    cancelButtonColor: '#6b7280', // Tailwind gray-500
+                    confirmButtonText: 'Yes, delete it!',
+                    cancelButtonText: 'Cancel',
+                    reverseButtons: true, // Puts "Cancel" on the left, "Delete" on the right
+                    scrollbarPadding: false // <--- ADD THIS LINE
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // User confirmed, proceed with deletion via Fetch API
+                        fetch('process_language_actions.php', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/x-www-form-urlencoded',
+                            },
+                            body: new URLSearchParams({
+                                'action': 'delete',
+                                'setting_date': dateToDelete,
+                                'csrf_token': '<?php echo htmlspecialchars($csrf_token); ?>'
+                            })
+                        })
+                        .then(response => {
+                            if (!response.ok) {
+                                // If the response is not OK, try to read it as text to get a more specific error
+                                return response.text().then(text => {
+                                    throw new Error(`HTTP error! status: ${response.status}. Server response: ${text}`);
+                                });
+                            }
+                            // Check if the content type is JSON before parsing
+                            const contentType = response.headers.get("content-type");
+                            if (contentType && contentType.indexOf("application/json") !== -1) {
+                                return response.json();
+                            } else {
+                                // If not JSON, assume a non-json success and handle it
+                                return {}; // Return empty object or handle as needed
+                            }
+                        })
+                        .then(data => {
+                            if (data.success) {
+                                Swal.fire(
+                                    'Deleted!',
+                                    data.message,
+                                    'success'
+                                ).then(() => {
+                                    window.location.reload(); // Reload page after successful deletion
+                                });
+                            } else {
+                                Swal.fire(
+                                    'Error!',
+                                    data.message || 'An error occurred during deletion.',
+                                    'error'
+                                );
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error:', error);
+                            Swal.fire(
+                                'Error!',
+                                'An unexpected error occurred. Please try again.',
+                                'error'
+                            );
+                        });
+                    }
+                });
             });
         });
 
@@ -571,7 +648,6 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
                 "ordering": true,
                 "info": true,
                 "language": {
-                    // This "Search:" text will be visually hidden by CSS now
                     "search": "Search:",
                     "info": "Showing _START_ to _END_ of _TOTAL_ entries",
                     "infoFiltered": "(filtered from _MAX_ total entries)",
@@ -587,23 +663,87 @@ unset($_SESSION['language_set_success'], $_SESSION['language_error']);
             });
 
             // --- Custom styling & icon application for DataTables elements (apply after DataTable init) ---
-            // Search input field styling
             $('.dataTables_filter input').addClass('border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500').attr('placeholder', 'Search...');
+            $('.dataTables_filter label').remove();
+            $('.dataTables_filter').prepend('<i class="fas fa-search"></i>');
 
-            // Remove default DataTables "Search:" label text and prepend the icon
-            // The icon's styling and positioning are handled by CSS.
-            $('.dataTables_filter label').remove(); // Directly remove the label element
-            $('.dataTables_filter').prepend('<i class="fas fa-search"></i>'); // Prepend the Font Awesome icon
-
-            // Pagination buttons - The main styling is now done via CSS
-            // We only need to ensure the correct icons are appended for Previous/Next.
             $('.dataTables_paginate .paginate_button.next').html('<i class="fas fa-chevron-right"></i>');
             $('.dataTables_paginate .paginate_button.previous').html('<i class="fas fa-chevron-left"></i>');
 
-            // Adjust layout of DataTables controls (important for left/right alignment)
-            // This ensures "Show X entries" and "Search" are on one line, and "Info" and "Pagination" are on another.
             $('.dataTables_length, .dataTables_filter').wrapAll('<div class="flex justify-between items-end mb-4"></div>');
             $('.dataTables_info, .dataTables_paginate').wrapAll('<div class="flex justify-between items-center mt-4"></div>');
         }
+
+        // NEW: Request Language Modal event listeners
+        openRequestLanguageModalBtn.addEventListener('click', () => {
+            showRequestLanguageModal("Request New Language", "Enter the name of the new language you wish to request.", true); // Set default for this modal
+            requestLanguageForm.style.display = 'block'; // Ensure form is visible
+            requestLanguageForm.querySelector('button[type="submit"]').style.display = 'block'; // Show submit
+            requestLanguageForm.querySelector('#cancelRequestLanguageBtn').style.display = 'block'; // Show cancel
+            closeRequestLanguageModalBtn.classList.add('hidden'); // Hide the standalone close button initially
+        });
+
+        cancelRequestLanguageBtn.addEventListener('click', () => {
+            hideRequestLanguageModal(); // Hide modal
+            requestLanguageForm.reset(); // Clear form
+        });
+
+        // Add event listener for the new standalone close button
+        closeRequestLanguageModalBtn.addEventListener('click', () => {
+            hideRequestLanguageModal();
+            requestLanguageForm.reset();
+        });
+
+
+        requestLanguageModal.addEventListener('click', (e) => {
+            // Only hide if clicking directly on the overlay, not on the modal box itself
+            if (e.target === requestLanguageModal) {
+                hideRequestLanguageModal();
+                requestLanguageForm.reset();
+            }
+        });
+
+        requestLanguageForm.addEventListener('submit', function(e) {
+            e.preventDefault(); // Prevent default form submission
+
+            const formData = new URLSearchParams(new FormData(this));
+
+            fetch('process_language_request.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.json(); // Expect JSON response
+            })
+            .then(data => {
+                // If the request was successful
+                if (data.success) {
+                    showRequestLanguageModal("Request Sent!", data.message, true);
+                    newLanguageNameInput.value = ''; // Clear input after successful submission
+                    requestLanguageForm.style.display = 'none'; // Hide form after successful submission
+                    // Show the new standalone close button
+                    closeRequestLanguageModalBtn.classList.remove('hidden');
+                } else {
+                    // If the request failed (e.g., duplicate pending)
+                    showRequestLanguageModal("Request Failed!", data.message, false);
+                    // Keep the form visible for correction
+                    requestLanguageForm.style.display = 'block';
+                    closeRequestLanguageModalBtn.classList.add('hidden'); // Hide standalone close button if form is visible
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showRequestLanguageModal("Request Failed!", "An unexpected error occurred. Please try again. (Details in console)", false);
+                requestLanguageForm.style.display = 'block'; // Keep form visible on unexpected error
+                closeRequestLanguageModalBtn.classList.add('hidden'); // Hide standalone close button
+            });
+        });
+
     });
 </script>

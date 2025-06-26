@@ -454,7 +454,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
           // Delay the actual redirection to allow the popup to be seen
           setTimeout(() => {
               if (redirectToDashboard === 'admin') {
-                  window.location.href = 'admin_dashboard.php';
+                  window.location.href = 'admin_overview.php';
               } else if (redirectToDashboard === 'teacher') {
                   window.location.href = 'teacher_dashboard.php';
               }

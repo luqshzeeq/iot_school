@@ -2,17 +2,29 @@
 // This file contains the standardized header for all admin pages.
 // session_start() is expected to be called by the including page (e.g., admin_manage_users.php)
 
-// Placeholder for notification data (you would fetch this from your database)
-// Example: Fetch pending password reset requests as notifications
+// Ensure $conn is available from the including script (e.g., admin_dashboard.php, admin_monitor_devices.php)
+// The including page should have already called db_connection.php and set up $conn.
+if (!isset($conn) || !$conn) {
+    // Fallback or error handling if $conn is not set.
+    // In a real application, you might redirect to an error page or show a degraded state.
+    error_log("header.php: Database connection (\$conn) is not available.");
+    // Attempt to include db_connection.php as a fallback if it wasn't included by the parent script.
+    // This is generally not ideal, as the parent script should manage its dependencies.
+    // For now, we'll assume the parent script *will* include db_connection.php.
+    // If you uncomment this, ensure db_connection.php only connects and doesn't exit.
+    // include_once 'db_connection.php';
+}
+
+// --- Fetch Notification Data ---
+// 1. Pending Password Reset Requests (existing logic)
 $pending_password_resets_count = 0;
 $pending_password_resets = [];
-
-if (isset($conn) && $conn) { // Ensure $conn is available from the including script
-    $stmt = $conn->prepare("SELECT u.username, pr.email, pr.expires_at 
-                            FROM password_resets pr 
-                            JOIN users u ON pr.email = u.email 
-                            WHERE pr.expires_at > NOW() 
-                            ORDER BY pr.expires_at DESC LIMIT 5"); // Get up to 5 recent pending requests
+if (isset($conn) && $conn) {
+    $stmt = $conn->prepare("SELECT u.username, pr.email, pr.expires_at
+                            FROM password_resets pr
+                            JOIN users u ON pr.email = u.email
+                            WHERE pr.expires_at > NOW()
+                            ORDER BY pr.expires_at DESC LIMIT 5");
     if ($stmt) {
         $stmt->execute();
         $result = $stmt->get_result();
@@ -21,6 +33,27 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
         $stmt->close();
     }
 }
+
+// 2. NEW: Pending Language Requests
+$pending_language_requests_count = 0;
+$pending_language_requests = [];
+if (isset($conn) && $conn) {
+    $stmt = $conn->prepare("SELECT lr.id, lr.language_name, u.username AS requested_by_username, lr.requested_at
+                            FROM language_requests lr
+                            JOIN users u ON lr.requested_by = u.id
+                            WHERE lr.status = 'pending'
+                            ORDER BY lr.requested_at ASC LIMIT 5"); // Get up to 5 oldest pending requests
+    if ($stmt) {
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $pending_language_requests = $result->fetch_all(MYSQLI_ASSOC);
+        $pending_language_requests_count = count($pending_language_requests);
+        $stmt->close();
+    }
+}
+
+// Total notifications for the badge
+$total_notifications_count = $pending_password_resets_count + $pending_language_requests_count;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -42,20 +75,20 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
 
         /* --- STYLES FOR DROPDOWN MENUS (both user and new notification) --- */
         .dropdown-container {
-            position: relative; /* Make container relative for absolute positioning of dropdown */
+            position: relative;
             display: inline-block;
         }
 
         .dropdown-menu {
             position: absolute;
             right: 0;
-            top: calc(100% + 1rem); /* Position below the button */
+            top: calc(100% + 1.5rem); /* Position below the button */
             background-color: white;
             border-radius: 0.5rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             padding: 0.5rem;
             z-index: 50;
-            width: 16rem;
+            width: 16rem; /* Default width */
             opacity: 0;
             transform: scale(0.95);
             transition: opacity 0.1s ease-out, transform 0.1s ease-out;
@@ -95,6 +128,7 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
             font-size: 0.875rem;
             color: #4b5563;
             text-decoration: none;
+            text-align: left; /* Ensure text aligns left in notification items */
         }
         .notification-item:last-child {
             border-bottom: none;
@@ -163,7 +197,6 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
             opacity: 1;
         }
         .modal-box .icon-wrapper {
-            /* Default icon wrapper style, applying the desired consistent blue color */
             background-color: #e0f2f7; /* Light blue background */
             color: #2980b9; /* A shade of blue for the icon */
             border-radius: 9999px; /* Full rounded */
@@ -196,30 +229,47 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
                     <div class="dropdown-container">
                         <button id="notificationMenuButton" type="button" class="relative p-2 text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 rounded-full">
                             <i class="fas fa-bell text-lg"></i>
-                            <?php if ($pending_password_resets_count > 0): ?>
-                                <span class="notification-count"><?php echo $pending_password_resets_count; ?></span>
+                            <?php if ($total_notifications_count > 0): ?>
+                                <span class="notification-count"><?php echo $total_notifications_count; ?></span>
                             <?php endif; ?>
                         </button>
                         <div id="notificationDropdownMenu" class="dropdown-menu w-72"> <div class="dropdown-header">
                                 <p class="font-semibold text-sm text-gray-800">Notifications</p>
                             </div>
-                            <div class="py-1 max-h-60 overflow-y-auto"> <?php if (!empty($pending_password_resets)): ?>
-                                    <?php foreach ($pending_password_resets as $reset): ?>
-                                        <a href="#" class="notification-item">
-                                            <strong>Password Reset Request</strong>
-                                            <span>User: <?php echo htmlspecialchars($reset['username'] ?? 'N/A'); ?></span>
-                                            <span>Email: <?php echo htmlspecialchars($reset['email']); ?></span>
-                                            <span class="text-xs text-gray-400">Expires: <?php echo htmlspecialchars(date('M d, Y H:i', strtotime($reset['expires_at']))); ?></span>
-                                        </a>
-                                    <?php endforeach; ?>
+                            <div class="py-1 max-h-60 overflow-y-auto"> <?php if ($total_notifications_count > 0): ?>
+                                    <?php if (!empty($pending_language_requests)): ?>
+                                        <p class="font-semibold text-gray-700 px-4 py-2 text-xs uppercase border-b border-gray-100">Language Requests</p>
+                                        <?php foreach ($pending_language_requests as $request): ?>
+                                            <a href="admin_dashboard.php?page=language_requests#language-requests-section" class="notification-item">
+                                                <strong>New Language Request</strong>
+                                                <span>"<?php echo htmlspecialchars($request['language_name']); ?>"</span>
+                                                <span>By: <?php echo htmlspecialchars($request['requested_by_username']); ?></span>
+                                                <span class="text-xs text-gray-400">On: <?php echo htmlspecialchars(date('M d, Y', strtotime($request['requested_at']))); ?></span>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($pending_password_resets)): ?>
+                                        <?php if (!empty($pending_language_requests)): ?>
+                                            <p class="font-semibold text-gray-700 px-4 py-2 text-xs uppercase border-t border-b border-gray-100">Password Resets</p>
+                                        <?php endif; ?>
+                                        <?php foreach ($pending_password_resets as $reset): ?>
+                                            <a href="#" class="notification-item">
+                                                <strong>Password Reset Request</strong>
+                                                <span>User: <?php echo htmlspecialchars($reset['username'] ?? 'N/A'); ?></span>
+                                                <span>Email: <?php echo htmlspecialchars($reset['email']); ?></span>
+                                                <span class="text-xs text-gray-400">Expires: <?php echo htmlspecialchars(date('M d, Y H:i', strtotime($reset['expires_at']))); ?></span>
+                                            </a>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
                                 <?php else: ?>
                                     <p class="text-center text-gray-500 py-4 text-sm">No new notifications.</p>
                                 <?php endif; ?>
                             </div>
-                            <?php if ($pending_password_resets_count > 0): ?>
+                            <?php if ($total_notifications_count > 0): ?>
                             <div class="dropdown-footer text-center border-t border-gray-100 mt-1 pt-2">
-                                <a href="#" class="text-indigo-600 hover:text-indigo-800 text-sm">View All Notifications</a>
-                            </div>
+                                <a href="admin_dashboard.php?page=language_requests#language-requests-section" class="text-indigo-600 hover:text-indigo-800 text-sm">View All Language Requests</a>
+                                </div>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -288,9 +338,6 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
                 const notificationDropdownMenu = document.getElementById('notificationDropdownMenu');
                 if (notificationDropdownMenu && notificationDropdownMenu.classList.contains('active')) {
                     notificationDropdownMenu.classList.remove('active');
-                    // Reset notification button icon if it had a chevron/rotation
-                    // const notificationMenuChevron = document.getElementById('notificationMenuChevron'); // if you add one
-                    // if (notificationMenuChevron) { /* reset icon */ }
                 }
             });
         }
@@ -298,7 +345,6 @@ if (isset($conn) && $conn) { // Ensure $conn is available from the including scr
         // NEW: Notification dropdown functionality
         const notificationMenuButton = document.getElementById('notificationMenuButton');
         const notificationDropdownMenu = document.getElementById('notificationDropdownMenu');
-        // No chevron for notification bell icon, so no rotation logic needed for icon itself
 
         if (notificationMenuButton && notificationDropdownMenu) {
             notificationMenuButton.addEventListener('click', (e) => {
