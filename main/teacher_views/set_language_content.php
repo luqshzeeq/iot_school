@@ -511,11 +511,13 @@ unset($_SESSION['language_request_success'], $_SESSION['language_request_error']
         // Trigger SweetAlert for success message if language was set successfully
         <?php if ($language_set_success): ?>
             Swal.fire({
+                target: '#main-content-area', // <-- ADD THIS
+                heightAuto: false,            // <-- AND ADD THIS
                 title: "Completed!",
                 text: "You have successfully set the language for <?php echo $selected_date_str_display; ?>.",
                 icon: "success",
                 confirmButtonColor: '#2563eb', // Blue button for success
-                scrollbarPadding: false // <--- ADD THIS LINE
+                onBeforeOpen: () => handleSwalLayoutShift()
             });
             <?php unset($_SESSION['language_set_success']); // UNSET AFTER USE ?>
         <?php endif; ?>
@@ -523,11 +525,13 @@ unset($_SESSION['language_request_success'], $_SESSION['language_request_error']
         // Trigger SweetAlert for error message if language setting failed
         <?php if (!empty($language_error)): ?>
             Swal.fire({
+                target: '#main-content-area', // <-- ADD THIS
+                heightAuto: false,            // <-- AND ADD THIS
                 title: "Error!",
                 text: "<?php echo htmlspecialchars($language_error); ?>",
                 icon: "error",
                 confirmButtonColor: '#ef4444', // Red button for error
-                scrollbarPadding: false // <--- ADD THIS LINE
+                onBeforeOpen: () => handleSwalLayoutShift()
             });
             <?php unset($_SESSION['language_error']); // UNSET AFTER USE ?>
         <?php endif; ?>
@@ -567,16 +571,18 @@ unset($_SESSION['language_request_success'], $_SESSION['language_request_error']
                 const dateToDelete = this.dataset.date; // Get the date from the button's data-date attribute
 
                 Swal.fire({
+                    target: '#main-content-area', // <-- ADD THIS
+                    heightAuto: false,            // <-- AND ADD THIS
                     title: 'Are you sure?',
-                    html: `You are about to delete the language setting for <span class="font-semibold text-red-700">${dateToDelete}</span>. This action cannot be undone.`,
+                    html: `You are about to delete the language setting for <span class="font-semibold text-red-700">${dateToDelete}</span>`,
                     icon: 'warning',
                     showCancelButton: true,
                     confirmButtonColor: '#dc2626', // Tailwind red-600
                     cancelButtonColor: '#6b7280', // Tailwind gray-500
-                    confirmButtonText: 'Yes, delete it!',
+                    confirmButtonText: 'Delete',
                     cancelButtonText: 'Cancel',
                     reverseButtons: true, // Puts "Cancel" on the left, "Delete" on the right
-                    scrollbarPadding: false // <--- ADD THIS LINE
+                    onBeforeOpen: () => handleSwalLayoutShift()
                 }).then((result) => {
                     if (result.isConfirmed) {
                         // User confirmed, proceed with deletion via Fetch API

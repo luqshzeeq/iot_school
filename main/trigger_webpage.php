@@ -110,7 +110,7 @@
             const DEVICE_ID = "ESP32_LangMon_002";
 
             // Define the URL to your esp_communication_handler.php
-            const PHP_HANDLER_URL = "http://172.20.10.2/esp_communication_handler.php"; // <<< REPLACE WITH YOUR PC's IP
+            const PHP_HANDLER_URL = "http://172.20.10.3/esp_communication_handler.php"; // <<< REPLACE WITH YOUR PC's IP
 
             function updateStatusDisplay(iconClass, message, colorClass = 'text-blue-600', isListening = false) {
                 if (isListening) {
@@ -154,8 +154,6 @@
                 }
 
                 // Join the kept lines together with a newline.
-                // If no lines were kept (e.g., an error occurred before transcription),
-                // a message will point the user to the main status display.
                 if (linesToKeep.length > 0) {
                     return linesToKeep.join('\n');
                 } else {
@@ -189,33 +187,38 @@
                 if ($('#triggerButton').prop('disabled')) {
                     return;
                 }
-                $('#filteredOutputText').text('Initiating speech process...');
+                $('#filteredOutputText').text('Waiting for result...');
                 $('#triggerButton').prop('disabled', true).removeClass('bg-blue-600 hover:bg-blue-700').addClass('bg-gray-400 cursor-not-allowed');
-                updateStatusDisplay('fa-spinner fa-spin', 'Sending trigger to server...', 'text-gray-600');
+
+                // Step 1: Show an "Initializing" state immediately
+                updateStatusDisplay('fa-spinner fa-spin', 'Initializing... Please wait.', 'text-gray-600', false);
+
+                // Step 2: Use a timer to switch to "Listening" after a delay
+                const startupDelay = 5000; // 2 seconds in milliseconds. Adjust as needed.
+                setTimeout(function() {
+                    updateStatusDisplay('', 'Listening... Please speak your order.', 'text-green-600', true);
+                }, startupDelay);
+
+                // The AJAX call starts immediately as before.
                 $.ajax({
                     url: PHP_HANDLER_URL,
                     method: 'GET',
                     data: { action: 'trigger_speech', api_key: API_KEY, device_id: DEVICE_ID },
-                    beforeSend: function() {
-                        updateStatusDisplay('', 'Listening... Please speak your order.', 'text-green-600', true);
-                    },
                     success: function(response) {
                         let pythonOutput = response.python_output || '';
                         let displayMessage = '';
                         let icon = 'fa-check-circle';
                         let color = 'text-green-600';
 
-                        // --- FINAL ROBUST LOGIC BLOCK ---
                         if (pythonOutput.includes('No speech detected within timeout')) {
                             displayMessage = 'No speech detected. Please try again.';
                             icon = 'fa-times-circle';
                             color = 'text-red-600';
-                        } else if (pythonOutput.includes('Microphone/Audio capture error')) {
+                        } else if (pythonOutput.includes('Microphone error on server')) {
                             displayMessage = 'Microphone error on server. Check server console.';
                             icon = 'fa-times-circle';
                             color = 'text-red-600';
                         } else if (pythonOutput.includes('Transcription')) {
-                            
                             if (pythonOutput.includes('Correct!')) {
                                 displayMessage = 'Correct! You spoke in the expected language.';
                                 icon = 'fa-check-circle';
@@ -229,7 +232,6 @@
                                 icon = 'fa-info-circle';
                                 color = 'text-blue-600';
                             }
-
                         } else if (pythonOutput.includes('Could not understand audio')) {
                             displayMessage = 'Could not understand. Please speak clearer.';
                             icon = 'fa-question-circle';
@@ -239,9 +241,8 @@
                             icon = 'fa-info-circle';
                             color = 'text-blue-600';
                         }
-                        // --- END OF FINAL LOGIC ---
-
-                        updateStatusDisplay(icon, displayMessage, color);
+                        
+                        updateStatusDisplay(icon, displayMessage, color, false); // Switch back from listening animation
                         $('#filteredOutputText').text(filterPythonOutputForStudent(pythonOutput));
                     },
                     error: function(jqXHR, textStatus, errorThrown) {

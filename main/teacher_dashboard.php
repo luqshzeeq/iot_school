@@ -1,4 +1,5 @@
 <?php
+ob_start();
 session_start();
 // Include your database connection file. Adjust the path if necessary.
 include 'db_connection.php';
@@ -55,12 +56,13 @@ if ($teacher_id > 0) { // Ensure a valid teacher ID
     }
 }
 
-
 // Generate CSRF token if not already present in the session
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
+
+
 
 // --- START: POST handling for setting daily language ---
 // This block processes the form submission from set_language_content.php
@@ -204,9 +206,9 @@ $display_date_str_for_language = htmlspecialchars($date_to_fetch_language_for); 
 
 // --- START: CORRECTED Fetch current language setting for the determined date (GLOBAL fetch) ---
 $sql_current_setting = "SELECT l.id, l.language_name
-                             FROM teacher_daily_languages tdl
-                             JOIN languages l ON tdl.language_id = l.id
-                             WHERE tdl.setting_date = ?"; // REMOVED tdl.teacher_id = ?
+                                  FROM teacher_daily_languages tdl
+                                  JOIN languages l ON tdl.language_id = l.id
+                                  WHERE tdl.setting_date = ?"; // REMOVED tdl.teacher_id = ?
 $stmt_fetch_lang = $conn->prepare($sql_current_setting);
 if ($stmt_fetch_lang) {
     // Only bind the date, as it's a global lookup now
@@ -295,10 +297,10 @@ $week_end = $today_dt->format('Y-m-d');
 // Fetch language settings for the current week (Monday to Friday)
 // This query must also be global if the daily language is global
 $sql_chart_data = "SELECT tdl.setting_date, l.language_name
-                   FROM teacher_daily_languages tdl
-                   JOIN languages l ON tdl.language_id = l.id
-                   WHERE tdl.setting_date BETWEEN ? AND ?
-                   ORDER BY tdl.setting_date ASC";
+                      FROM teacher_daily_languages tdl
+                      JOIN languages l ON tdl.language_id = l.id
+                      WHERE tdl.setting_date BETWEEN ? AND ?
+                      ORDER BY tdl.setting_date ASC";
 
 $stmt_chart_data = $conn->prepare($sql_chart_data);
 if ($stmt_chart_data) {
@@ -378,21 +380,15 @@ $chart_labels_json = json_encode($chart_labels);
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- SweetAlert2 CSS and JS -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
+    <link rel="stylesheet" href="https://unpkg.com/micromodal/dist/micromodal.min.css">
+
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f7fafc; }
-        /* This is the crucial fix for the sidebar shift */
-        html {
-            overflow-y: scroll; /* Forces vertical scrollbar to always be present */
-        }
+        
+        /* REMOVED the old CSS fixes for layout shift. They are no longer needed. */
 
-/* Add this to your <style> block in teacher_dashboard.php */
-body.swal2-shown {
-    padding-right: 0px !important; /* Ensure no padding is added */
-    overflow: hidden !important; /* Force overflow hidden as SweetAlert does this anyway */
-}
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-track { background: #edf2f7; border-radius: 10px; }
         ::-webkit-scrollbar-thumb { background: #a0aec0; border-radius: 10px; }
@@ -467,34 +463,28 @@ body.swal2-shown {
         .stat-card .text-sm { color: inherit; opacity: 0.8; }
         .stat-card .text-xl { color: inherit; }
 
-        /* General Calendar Grid style - day-specific styles including .current-day will be in dashboard_content.php */
         .calendar-grid {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
             gap: 0.5rem; /* Tailwind's gap-2 */
         }
-        /* The specific .calendar-day.current-day styles are moved to dashboard_content.php */
-
-
-        /* Rotate animation for the sidebar toggle icon */
+        
         #sidebarToggleBottom i {
-            transition: transform 0.3s ease-in-out; /* Add transition for smooth rotation */
+            transition: transform 0.3s ease-in-out; 
         }
 
         .sidebar.collapsed #sidebarToggleBottom i {
-            transform: rotate(180deg); /* Rotate the icon when the sidebar is collapsed */
+            transform: rotate(180deg); 
         }
 
-        /* Modal Styles */
-        /* These base modal styles are likely for the logout modal and are fine here. */
         .modal {
-            display: none; /* Hidden by default */
+            display: none; 
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.5); /* Transparent overlay */
+            background-color: rgba(0, 0, 0, 0.5); 
             align-items: center;
             justify-content: center;
             z-index: 1000;
@@ -546,54 +536,52 @@ body.swal2-shown {
             background-color: #ff5c4b;
         }
 
-        /* Styles for the dropdown button text and arrow when active/hover */
         #dropdownAvatarNameButton {
-            color: #1f2937; /* Default gray/dark color for text */
-            transition: color 0.1s ease-in-out; /* Smooth transition for text color */
+            color: #1f2937; 
+            transition: color 0.1s ease-in-out; 
         }
 
         #dropdownAvatarNameButton.active-dropdown-button,
         #dropdownAvatarNameButton:hover {
-            color: #2563eb; /* Blue color on active or hover */
+            color: #2563eb; 
         }
 
         #dropdownAvatarNameButton svg {
-            transition: stroke 0.1s ease-in-out; /* Smooth transition for SVG stroke color */
+            transition: stroke 0.1s ease-in-out;
         }
 
         #dropdownAvatarNameButton.active-dropdown-button svg,
         #dropdownAvatarNameButton:hover svg {
-            stroke: #2563eb; /* Blue color for the SVG arrow on active or hover */
+            stroke: #2563eb; 
         }
-
-        /* NEW/MODIFIED: Specific styles for the dropdown menu background and items */
+        
         .dropdown-container {
-            position: relative; /* Make container relative for absolute positioning of dropdown */
+            position: relative; 
             display: inline-block;
         }
 
         .dropdown-menu {
-            display: none; /* ADDED: Hides it completely when not active */
+            display: none; 
             position: absolute;
             right: 0;
-            top: calc(100% + 1rem); /* Position below the button */
+            top: calc(100% + 1.5rem); 
             background-color: white;
             border-radius: 0.5rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
             padding: 0.5rem;
             z-index: 50;
-            width: 16rem; /* Default width */
-            opacity: 0; /* Still good for transition effect */
-            transform: scale(0.95); /* Still good for transition effect */
+            width: 16rem; 
+            opacity: 0; 
+            transform: scale(0.95);
             transition: opacity 0.1s ease-out, transform 0.1s ease-out;
-            pointer-events: none; /* Prevents interaction when hidden */
+            pointer-events: none; 
             transform-origin: top right;
         }
         .dropdown-menu.active {
-            display: block; /* ADDED: Shows it when active */
+            display: block; 
             opacity: 1;
             transform: scale(1);
-            pointer-events: auto; /* Allows interaction when active */
+            pointer-events: auto; 
         }
         .dropdown-header {
             padding: 0.5rem 0.75rem;
@@ -608,25 +596,24 @@ body.swal2-shown {
             font-size: 0.875rem;
             text-decoration: none;
             transition: background-color 0.15s ease-in-out;
-            cursor: pointer; /* Ensure clickable items have pointer cursor */
+            cursor: pointer; 
         }
         .dropdown-item:hover { background-color: #f3f4f6; }
         .dropdown-item i {
             margin-right: 0.75rem;
             color: #9ca3af;
-            width: 1.25rem; /* Consistent icon spacing */
+            width: 1.25rem; 
         }
-        /* Specific styles for notification items */
         .notification-item {
-            display: flex; /* Changed from block to flex for layout */
-            align-items: center; /* Vertically align content and delete button */
-            padding: 0.75rem 1rem; /* Adjusted padding */
+            display: flex; 
+            align-items: center; 
+            padding: 0.75rem 1rem; 
             border-bottom: 1px solid #f3f4f6;
             font-size: 0.875rem;
             color: #4b5563;
             text-decoration: none;
             text-align: left;
-            cursor: default; /* Change cursor back to default for the item itself */
+            cursor: default; 
         }
         .notification-item:last-child {
             border-bottom: none;
@@ -636,7 +623,7 @@ body.swal2-shown {
         }
         .notification-item strong {
             color: #1f2937;
-            display: block; /* Ensure strong breaks line if needed */
+            display: block; 
         }
         .notification-item span {
             font-size: 0.75rem;
@@ -648,18 +635,17 @@ body.swal2-shown {
             position: absolute;
             top: -5px;
             right: -5px;
-            background-color: #ef4444; /* Red color */
+            background-color: #ef4444; 
             color: white;
             font-size: 0.7rem;
             font-weight: bold;
-            border-radius: 9999px; /* Full rounded */
+            border-radius: 9999px; 
             padding: 0.1rem 0.4rem;
             line-height: 1;
-            min-width: 18px; /* Ensures minimum size for single digits */
+            min-width: 18px; 
             text-align: center;
         }
 
-        /* For the logout modal to match the style of set_language_content modals */
         .modal-overlay {
             position: fixed;
             top: 0;
@@ -710,7 +696,6 @@ body.swal2-shown {
             font-size: 2rem;
         }
 
-        /* Style for the Sign out button */
         #logoutForm #nav-logout-dropdown {
             display: flex; align-items: center; color: #4a5568; transition: background-color 0.1s ease-in-out, color 0.1s ease-in-out;
             width: 100%; text-align: left; padding: 0.5rem 1rem;
@@ -718,15 +703,14 @@ body.swal2-shown {
         #logoutForm #nav-logout-dropdown:hover { background-color: #ffe4e6; color: #ef4444; }
         #logoutForm #nav-logout-dropdown i { margin-right: 0.75rem; width: 1.25rem; text-align: center; color: #6b7280; transition: color 0.1s ease-in-out; }
         #logoutForm #nav-logout-dropdown:hover i { color: #ef4444; }
-
-        /* Style for the delete notification button */
+        
         .delete-notification-btn {
             background: none;
             border: none;
             cursor: pointer;
-            line-height: 1; /* For better vertical alignment of icon */
-            flex-shrink: 0; /* Prevent button from shrinking */
-            display: flex; /* For centering the icon */
+            line-height: 1; 
+            flex-shrink: 0; 
+            display: flex; 
             align-items: center;
             justify-content: center;
         }
@@ -744,12 +728,10 @@ body.swal2-shown {
                 <i class="fas fa-tachometer-alt w-5 text-center mr-3"></i>
                 <span>Dashboard</span>
             </a>
-            <!-- FIX: Changed id from 'nav-set-language' to 'nav-set_language' -->
             <a href="teacher_dashboard.php?page=set_language" id="nav-set_language" class="sidebar-item flex items-center px-4 py-2.5 rounded-md text-sm">
                 <i class="fas fa-language w-5 text-center mr-3"></i>
                 <span>Set Daily Language</span>
             </a>
-            <!-- FIX: Changed id from 'nav-language-usage' to 'nav-language_usage' -->
             <a href="teacher_dashboard.php?page=language_usage" id="nav-language_usage" class="sidebar-item flex items-center px-4 py-2.5 rounded-md text-sm">
                 <i class="fas fa-chart-area w-5 text-center mr-3"></i>
                 <span>Language Usage</span>
@@ -766,7 +748,7 @@ body.swal2-shown {
         </div>
     </aside>
 
-    <div class="flex-1 flex flex-col overflow-hidden content-area">
+    <div id="main-content-area" class="flex-1 flex flex-col overflow-hidden content-area">
         <header class="bg-white shadow-md p-5 flex justify-between items-center z-20">
             <div class="flex items-center">
                 <button id="menuButton" class="text-gray-600 focus:outline-none md:hidden mr-4">
@@ -821,7 +803,7 @@ body.swal2-shown {
                         </svg>
                     </button>
 
-                    <div id="dropdownAvatarName" class="z-10 hidden absolute right-0 mt-5 bg-white divide-y divide-gray-200 rounded-lg shadow-sm w-44">
+                    <div id="dropdownAvatarName" class="z-10 hidden absolute right-0 mt-7 bg-white divide-y divide-gray-200 rounded-lg shadow-sm w-44">
                         <div class="px-4 py-3 text-sm text-gray-900">
                             <div class="font-medium "><?php echo htmlspecialchars($teacher_username); ?></div>
                             <div class="truncate"><?php echo htmlspecialchars($teacher_email); ?></div>
@@ -852,13 +834,7 @@ body.swal2-shown {
 
         <main class="flex-1 p-6 md:p-8 overflow-y-auto">
             <?php
-            // Display error messages (not success messages for set_language, as that's handled by the modal)
-            // language_error is NOT displayed as a banner here if it's set_language page, it's handled by SweetAlert directly in set_language_content.php
-            // if (!empty($language_error) && $page === 'set_language') {
-            //     echo "<div class='mb-4 p-4 text-sm text-red-700 bg-red-100 rounded-lg' role='alert'>" . htmlspecialchars($language_error) . "</div>";
-            // }
-
-            // Display profile update success/error messages
+            // Display error messages
             if (!empty($profile_update_success) && $page === 'profile') {
                 echo "<div class='mb-4 p-4 text-sm text-green-700 bg-green-100 rounded-lg' role='alert'>" . htmlspecialchars($profile_update_success) . "</div>";
             }
@@ -871,19 +847,15 @@ body.swal2-shown {
             }
 
             $content_loaded = false;
-            $base_views_path = 'teacher_views/'; // Define base path for views
+            $base_views_path = 'teacher_views/';
 
             // Include the appropriate content based on the 'page' GET parameter
             switch ($page) {
                 case 'set_language':
                     if (file_exists($base_views_path . 'set_language_content.php')) {
-                        // Pass the available_languages to the included file
                         $available_languages_list = $available_languages;
-                        // For the set_language page, we also pass the language_set_success session variable
-                        // directly to the included file so it can trigger the modal.
-                        // language_set_success and language_error are read and then unset in set_language_content.php
                         $language_set_success = $_SESSION['language_set_success'] ?? false;
-                        $language_error = $_SESSION['language_error'] ?? ''; // Pass the error too
+                        $language_error = $_SESSION['language_error'] ?? '';
                         include $base_views_path . 'set_language_content.php';
                         $content_loaded = true;
                     }
@@ -895,57 +867,17 @@ body.swal2-shown {
                     }
                     break;
                 case 'profile':
-                    // Profile content is kept inline as per user's previous structure
-                    ?>
-                    <div class="container mx-auto">
-                        <div class="card p-6 md:p-8">
-                            <h2 class="text-2xl font-semibold text-gray-800 mb-6">My Profile</h2>
-                            <div id="profileView">
-                                <div class="flex flex-col items-center mb-6">
-                                    <img src="<?php echo $profile_page_pic_url; ?>" alt="Profile Picture" class="w-32 h-32 rounded-full object-cover border-4 border-blue-400 mb-4" id="profilePicPreview" onerror="this.onerror=null; this.src='https://placehold.co/120x120/4299E1/FFFFFF?text=<?php echo $teacher_profile_pic_initial; ?>';">
-                                    <h3 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($teacher_username); ?></h3>
-                                    <p class="text-gray-600 text-sm"><?php echo htmlspecialchars($teacher_email); ?></p>
-                                </div>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700 mb-6">
-                                    <div><p class="font-semibold text-gray-500 text-xs uppercase mb-1">Username</p><p class="text-lg"><?php echo htmlspecialchars($teacher_username); ?></p></div>
-                                    <div><p class="font-semibold text-gray-500 text-xs uppercase mb-1">Email</p><p class="text-lg"><?php echo htmlspecialchars($teacher_email); ?></p></div>
-                                </div>
-                                <div class="flex justify-end">
-                                    <button id="editProfileButton" class="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 flex items-center shadow-md"><i class="fas fa-edit mr-2"></i>Edit Profile</button>
-                                </div>
-                            </div>
-                            <div id="profileEdit" class="hidden">
-                                <form action="update_profile.php" method="POST" enctype="multipart/form-data" class="space-y-6">
-                                    <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
-                                    <input type="hidden" name="teacher_id" value="<?php echo htmlspecialchars($teacher_id); ?>">
-                                    <input type="hidden" name="update_profile_action" value="1"> <input type="hidden" name="source_page" value="profile">
-                                    <div class="flex flex-col items-center mb-6">
-                                        <img src="<?php echo $profile_page_pic_url; ?>" alt="Profile Picture" class="w-32 h-32 rounded-full object-cover border-4 border-blue-400 mb-4" id="profilePicPreview" onerror="this.onerror=null; this.src='https://placehold.co/120x120/4299E1/FFFFFF?text=<?php echo $teacher_profile_pic_initial; ?>';">
-                                        <label for="profile_pic" class="cursor-pointer bg-blue-100 text-blue-700 px-4 py-2 rounded-md hover:bg-blue-200 transition-colors"><i class="fas fa-camera mr-2"></i>Change Picture</label>
-                                        <input type="file" name="profile_pic" id="profile_pic" class="hidden" accept="image/*">
-                                    </div>
-                                    <div><label for="name" class="block text-sm font-medium text-gray-700 mb-1">Username</label><input type="text" name="name" id="name" value="<?php echo htmlspecialchars($teacher_username); ?>" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required></div>
-                                    <div><label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" name="email" id="email" value="<?php echo htmlspecialchars($teacher_email); ?>" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" required></div>
-                                    <div><label for="current_password" class="block text-sm font-medium text-gray-700 mb-1">Current Password</label><input type="password" name="current_password" id="current_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Required to update profile"></div>
-                                    <div><label for="new_password" class="block text-sm font-medium text-gray-700 mb-1">New Password </label><input type="password" name="new_password" id="new_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Leave blank to keep current"></div>
-                                    <div><label for="confirm_new_password" class="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label><input type="password" name="confirm_new_password" id="confirm_new_password" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"></div>
-                                    <div class="flex justify-end space-x-3">
-                                        <button type="button" id="cancelEditButton" class="px-6 py-3 bg-gray-300 text-gray-800 rounded-md hover:bg-gray-400 transition-colors duration-200">Cancel</button>
-                                        <button type="submit" class="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200 flex items-center shadow-md"><i class="fas fa-save mr-2"></i>Save </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                    <?php
-                    $content_loaded = true;
+                    // This now includes a separate file for profile content
+                    if (file_exists($base_views_path . 'profile_content.php')) {
+                        include $base_views_path . 'profile_content.php';
+                        $content_loaded = true;
+                    }
                     break;
                 case 'dashboard':
                 default:
                     if (file_exists($base_views_path . 'dashboard_content.php')) {
-                        // Pass chart data to dashboard_content.php
-                        $chart_labels_dashboard = $chart_labels_json; // Renamed to avoid collision if dashboard_content has its own labels
-                        $chart_datasets_dashboard = $chart_datasets_json; // Renamed
+                        $chart_labels_dashboard = $chart_labels_json;
+                        $chart_datasets_dashboard = $chart_datasets_json;
                         include $base_views_path . 'dashboard_content.php';
                         $content_loaded = true;
                     }
@@ -970,22 +902,47 @@ body.swal2-shown {
             <h2 class="text-2xl font-bold text-gray-800 mb-2">Logout</h2>
             <p class="text-gray-600 mb-6">Are you sure you want to log out?</p>
             <div class="flex flex-col space-y-3">
-                   <button id="confirmLogoutBtn" class="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200">
-                    Log Out
-                </button>
-                <button id="cancelLogoutBtn" class="px-4 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors duration-200">
-                    Cancel
-                </button>
+                    <button id="confirmLogoutBtn" class="px-4 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                        Log Out
+                    </button>
+                    <button id="cancelLogoutBtn" class="px-4 py-3 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors duration-200">
+                        Cancel
+                    </button>
             </div>
         </div>
     </div>
+    
+    <div class="modal micromodal-slide" id="modal-success" aria-hidden="true">
+      <div class="modal__overlay" tabindex="-1" data-micromodal-close>
+        <div class="modal__container w-full max-w-sm" role="dialog" aria-modal="true" aria-labelledby="modal-success-title">
+          <main class="modal__content bg-white rounded-lg p-6 text-center" id="modal-success-content">
+            <div class="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-green-100 mb-4">
+              <svg class="h-8 w-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800" id="modal-success-title">Completed!</h2>
+            <p class="text-gray-600 mt-2" id="modal-success-message">You have successfully updated the setting.</p>
+          </main>
+          <footer class="modal__footer bg-gray-50 rounded-b-lg px-6 py-3 text-right">
+            <button class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700" data-micromodal-close aria-label="Close this dialog window">OK</button>
+          </footer>
+        </div>
+      </div>
+    </div>
+
 
     <script type="text/javascript" src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/2.0.8/js/dataTables.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
+    <script src="https://unpkg.com/micromodal/dist/micromodal.min.js"></script>
+
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // NEW: Initialize Micromodal
+        MicroModal.init();
+
         const sidebar = document.getElementById('sidebar');
         const menuButton = document.getElementById('menuButton');
         const sidebarToggleBottom = document.getElementById('sidebarToggleBottom');
@@ -996,14 +953,12 @@ body.swal2-shown {
         
         const navItems = document.querySelectorAll('.sidebar-item');
 
-        // Set active navigation item based on current page
         const currentPage = new URLSearchParams(window.location.search).get('page') || 'dashboard';
         const activeNavItem = document.getElementById(`nav-${currentPage}`);
         if (activeNavItem) {
             activeNavItem.classList.add('active');
         }
 
-        // Sidebar toggle functionality
         menuButton.addEventListener('click', function() {
             sidebar.classList.toggle('-translate-x-full');
         });
@@ -1014,14 +969,12 @@ body.swal2-shown {
             sidebar.classList.toggle('w-20');
         });
 
-        // Profile dropdown functionality
         if (dropdownAvatarNameButton && dropdownAvatarName) {
             dropdownAvatarNameButton.addEventListener('click', function() {
                 dropdownAvatarName.classList.toggle('hidden');
                 dropdownAvatarNameButton.classList.toggle('active-dropdown-button');
             });
 
-            // Close dropdown if clicked outside
             document.addEventListener('click', function(event) {
                 if (!profileDropdownContainer.contains(event.target)) {
                     dropdownAvatarName.classList.add('hidden');
@@ -1030,7 +983,6 @@ body.swal2-shown {
             });
         }
 
-        // Profile edit/view toggle
         const editProfileButton = document.getElementById('editProfileButton');
         const cancelEditButton = document.getElementById('cancelEditButton');
         const profileView = document.getElementById('profileView');
@@ -1064,16 +1016,15 @@ body.swal2-shown {
             });
         }
 
-        // --- Logout Confirmation Modal --- //
         const logoutModal = document.getElementById('logoutConfirmationModal');
-        const logoutButton = document.getElementById('nav-logout-dropdown'); // This is now an anchor tag
+        const logoutButton = document.getElementById('nav-logout-dropdown');
         const cancelLogoutButton = document.getElementById('cancelLogoutBtn');
         const confirmLogoutButton = document.getElementById('confirmLogoutBtn');
         const logoutForm = document.getElementById('logoutForm');
 
         if (logoutButton && logoutModal && logoutForm) {
             logoutButton.addEventListener('click', function(event) {
-                event.preventDefault(); // Prevent default link behavior
+                event.preventDefault(); 
                 logoutModal.classList.remove('hidden');
                 logoutModal.style.display = 'flex';
             });
@@ -1095,40 +1046,25 @@ body.swal2-shown {
             });
         }
 
-        // NEW: Notification Dropdown functionality for Teacher
         const teacherNotificationButton = document.getElementById('teacherNotificationButton');
         const teacherNotificationDropdown = document.getElementById('teacherNotificationDropdown');
         const markAllAsReadBtn = document.getElementById('markAllAsReadBtn');
 
         if (teacherNotificationButton && teacherNotificationDropdown) {
             teacherNotificationButton.addEventListener('click', (e) => {
-                e.stopPropagation(); // Prevent document click from closing it immediately
+                e.stopPropagation(); 
                 teacherNotificationDropdown.classList.toggle('active');
 
-                // Close profile dropdown if open
-                const profileDropdownName = document.getElementById('dropdownAvatarName'); // Get the actual profile dropdown element
-                const profileDropdownButton = document.getElementById('dropdownAvatarNameButton'); // Get the profile dropdown button
-                if (profileDropdownName && profileDropdownButton && profileDropdownName.classList.contains('hidden') === false) { // Check if profile dropdown is visible
-                    profileDropdownName.classList.add('hidden'); // Hide the profile dropdown
-                    // Also reset the button's active state if it has one (e.g. for chevron rotation)
-                    profileDropdownButton.classList.remove('active-dropdown-button'); // Assuming it gets this class
-                    profileDropdownButton.querySelector('svg path').setAttribute('d', 'm1 1 4 4 4-4'); // Reset chevron down
+                const profileDropdownName = document.getElementById('dropdownAvatarName');
+                const profileDropdownButton = document.getElementById('dropdownAvatarNameButton');
+                if (profileDropdownName && profileDropdownButton && profileDropdownName.classList.contains('hidden') === false) { 
+                    profileDropdownName.classList.add('hidden');
+                    profileDropdownButton.classList.remove('active-dropdown-button'); 
+                    profileDropdownButton.querySelector('svg path').setAttribute('d', 'm1 1 4 4 4-4');
                 }
 
-
-                // If opening, consider marking as read (or fetch fresh unread)
                 if (teacherNotificationDropdown.classList.contains('active')) {
-                    // Optional: You could fetch UNREAD notifications here via AJAX
-                    // or just rely on the PHP on page load.
-                    // If you have a backend endpoint to mark individual notifications read when clicked:
-                    // document.querySelectorAll('#teacherNotificationDropdown .notification-item:not(.text-gray-500)').forEach(item => {
-                    //    item.addEventListener('click', function() {
-                    //        const notificationId = this.dataset.notificationId;
-                    //        fetch('mark_notification_read.php', { method: 'POST', body: `id=${notificationId}` })
-                    //        .then(response => response.json())
-                    //        .then(data => { if (data.success) { item.classList.add('text-gray-500'); item.classList.remove('font-semibold', 'text-gray-800'); /* update badge count */ } });
-                    //    });
-                    // });
+                   
                 }
             });
         }
@@ -1136,8 +1072,7 @@ body.swal2-shown {
         if (markAllAsReadBtn) {
             markAllAsReadBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                // Send AJAX request to mark all notifications as read for this teacher
-                fetch('mark_notifications_read.php', { // Create this PHP file
+                fetch('mark_notifications_read.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
@@ -1147,34 +1082,27 @@ body.swal2-shown {
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // Visually update UI
                         document.querySelectorAll('#teacherNotificationDropdown .notification-item').forEach(item => {
                             item.classList.add('text-gray-500');
                             item.classList.remove('font-semibold', 'text-gray-800');
                         });
                         const notificationCountSpan = teacherNotificationButton.querySelector('.notification-count');
-                        if (notificationCountSpan) notificationCountSpan.remove(); // Remove the badge
-                        // Keep dropdown open briefly or close it. For now, let's close it after a short delay.
-                        setTimeout(() => { teacherNotificationDropdown.classList.remove('active'); }, 300); // Close the dropdown after a slight delay for visual confirmation
-                        // Optional: show a small toast notification that all are marked read
+                        if (notificationCountSpan) notificationCountSpan.remove(); 
+                        setTimeout(() => { teacherNotificationDropdown.classList.remove('active'); }, 300);
                     } else {
                         console.error('Failed to mark all as read:', data.message);
-                        // Optional: show an error toast
                     }
                 })
                 .catch(error => {
                     console.error('Network error marking all as read:', error);
-                    // Optional: show an error toast
                 });
             });
         }
 
-
-        // NEW: Delete Individual Notification Logic
         document.querySelectorAll('.delete-notification-btn').forEach(button => {
             button.addEventListener('click', (e) => {
-                e.preventDefault(); // Prevent default link/button action
-                e.stopPropagation(); // Stop click from propagating to the parent notification-item div
+                e.preventDefault(); 
+                e.stopPropagation();
 
                 const notificationItem = e.target.closest('.notification-item');
                 const notificationId = notificationItem.dataset.notificationId;
@@ -1185,16 +1113,18 @@ body.swal2-shown {
                 }
 
                 Swal.fire({
+                    target: '#main-content-area', // <-- ADD THIS
+                    heightAuto: false,            // <-- AND ADD THIS
                     title: 'Delete Notification?',
                     text: 'This notification will be permanently removed.',
                     icon: 'warning',
                     showCancelButton: true,
                     confirmButtonColor: '#d33',
                     cancelButtonColor: '#6c757d',
-                    confirmButtonText: 'Yes, delete it!'
+                    confirmButtonText: 'Delete'
                 }).then((result) => {
                     if (result.isConfirmed) {
-                        fetch('delete_notification.php', { // This is the new file to create
+                        fetch('delete_notification.php', { 
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/x-www-form-urlencoded',
@@ -1204,15 +1134,13 @@ body.swal2-shown {
                         .then(response => response.json())
                         .then(data => {
                             if (data.success) {
-                                notificationItem.remove(); // Remove the item from the DOM
-
-                                // Decrement notification count
+                                notificationItem.remove(); 
                                 const notificationCountSpan = teacherNotificationButton.querySelector('.notification-count');
                                 if (notificationCountSpan) {
                                     let currentCount = parseInt(notificationCountSpan.textContent, 10);
-                                    currentCount = Math.max(0, currentCount - 1); // Ensure it doesn't go below zero
+                                    currentCount = Math.max(0, currentCount - 1);
                                     if (currentCount === 0) {
-                                        notificationCountSpan.remove(); // Remove badge if count is 0
+                                        notificationCountSpan.remove();
                                     } else {
                                         notificationCountSpan.textContent = currentCount;
                                     }
@@ -1231,97 +1159,35 @@ body.swal2-shown {
             });
         });
 
-
-        // Close ALL dropdowns if the user clicks outside of them
         document.addEventListener('click', (e) => {
-            // Close Profile Dropdown
             const profileDropdownName = document.getElementById('dropdownAvatarName');
             const profileDropdownButton = document.getElementById('dropdownAvatarNameButton');
             if (profileDropdownContainer && profileDropdownName && profileDropdownButton && !profileDropdownContainer.contains(e.target) && !profileDropdownName.contains(e.target)) {
-                if (profileDropdownName.classList.contains('hidden') === false) { // Check if profile dropdown is visible
-                    profileDropdownName.classList.add('hidden'); // Hide the profile dropdown
-                    // Also reset the button's active state if it has one (e.g. for chevron rotation)
-                    profileDropdownButton.classList.remove('active-dropdown-button'); // Assuming it gets this class
-                    // If you have an SVG chevron, reset its path
+                if (profileDropdownName.classList.contains('hidden') === false) { 
+                    profileDropdownName.classList.add('hidden');
+                    profileDropdownButton.classList.remove('active-dropdown-button'); 
                     const profileChevronSvgPath = profileDropdownButton.querySelector('svg path');
                     if (profileChevronSvgPath) {
-                        profileChevronSvgPath.setAttribute('d', 'm1 1 4 4 4-4'); // Reset chevron down path
+                        profileChevronSvgPath.setAttribute('d', 'm1 1 4 4 4-4');
                     }
                 }
             }
-            // Close Notification Dropdown
-            const teacherNotificationButton = document.getElementById('teacherNotificationButton'); // Re-declare for scope
-            const teacherNotificationDropdown = document.getElementById('teacherNotificationDropdown'); // Re-declare for scope
+            const teacherNotificationButton = document.getElementById('teacherNotificationButton'); 
+            const teacherNotificationDropdown = document.getElementById('teacherNotificationDropdown'); 
             if (teacherNotificationButton && teacherNotificationDropdown && !teacherNotificationButton.contains(e.target) && !teacherNotificationDropdown.contains(e.target)) {
                 if (teacherNotificationDropdown.classList.contains('active')) {
                     teacherNotificationDropdown.classList.remove('active');
                 }
             }
         });
-
-        // Generic Modal Show/Hide function (used by set_language_content.php's requestLanguageModal)
-        // This function will remain here for other uses (like request language modal in set_language_content.php).
-        function showCustomModal(modalElement, title, message, isSuccess = true) {
-            const modalBox = modalElement.querySelector('.modal-box, .request-modal-box');
-            const modalBoxTitle = modalBox.querySelector('h3');
-            const modalBoxMessage = modalBox.querySelector('p:not([id])');
-
-            if (modalBoxTitle) modalBoxTitle.textContent = title;
-            if (modalBoxMessage) modalBoxMessage.textContent = message;
-
-            if (modalElement.id === 'requestLanguageModal') { // Only modify for requestLanguageModal
-                const iconI = modalBox.querySelector('.icon-wrapper i.fas');
-                const iconDiv = iconI.closest('.icon-wrapper');
-                iconDiv.classList.remove('bg-red-100', 'bg-blue-100', 'bg-green-100');
-                iconI.classList.remove('fa-plus-circle', 'fa-check-circle', 'fa-times-circle');
-                iconI.classList.remove('text-blue-600', 'text-green-600', 'text-red-600');
-
-                if (isSuccess) {
-                    iconDiv.classList.add('bg-green-100');
-                    iconI.classList.add('fa-check-circle', 'text-green-600');
-                } else {
-                    iconDiv.classList.add('bg-red-100');
-                    iconI.classList.add('fa-times-circle', 'text-red-600');
-                }
-            }
-
-            modalElement.classList.remove('invisible', 'opacity-0');
-            modalElement.classList.add('active');
-        }
-
-        // Generic Modal Hide function (used by set_language_content.php's requestLanguageModal)
-        function hideModal(modalElement) {
-            modalElement.classList.remove('active');
-            setTimeout(() => {
-                modalElement.classList.add('invisible', 'opacity-0');
-
-                // Specific reset for requestLanguageModal if it exists
-                if (modalElement.id === 'requestLanguageModal') {
-                    // These elements should be defined in set_language_content.php where the modal HTML exists
-                    const modalBox = modalElement.querySelector('.request-modal-box');
-                    const iconI = modalBox.querySelector('.icon-wrapper i.fas');
-                    const titleH3 = modalBox.querySelector('h3');
-                    const messageP = modalBox.querySelector('p:not([id])');
-                    const requestLanguageForm = document.getElementById('requestLanguageForm'); // Assuming form ID
-                    const closeRequestLanguageModalBtn = document.getElementById('closeRequestLanguageModalBtn'); // Assuming this button ID
-
-                    if (iconI) {
-                        iconI.classList.remove('fa-check-circle', 'fa-times-circle', 'text-green-600', 'text-red-600');
-                        iconI.classList.add('fa-plus-circle', 'text-blue-600'); // Default icon and color
-                        iconI.closest('.icon-wrapper').classList.remove('bg-green-100', 'bg-red-100');
-                        iconI.closest('.icon-wrapper').classList.add('bg-blue-100');
-                    }
-                    if (titleH3) titleH3.textContent = "Request New Language";
-                    if (messageP) messageP.textContent = "";
-                    if (requestLanguageForm) requestLanguageForm.style.display = 'block';
-                    if (requestLanguageForm) requestLanguageForm.querySelector('button[type="submit"]').style.display = 'block';
-                    if (requestLanguageForm) requestLanguageForm.querySelector('#cancelRequestLanguageBtn').style.display = 'block';
-                    if (closeRequestLanguageModalBtn) closeRequestLanguageModalBtn.classList.add('hidden');
-                }
-            }, 300);
-        }
     });
-
     </script>
 </body>
 </html>
+
+<?php
+// --- START: Output Buffering Flush ---
+// This must be the very last thing in your PHP file.
+ob_end_flush();
+// --- END: Output Buffering Flush ---
+?>

@@ -3,181 +3,227 @@
 // Expected variables from teacher_dashboard.php:
 // $conn, $teacher_id, $teacher_username, $teacher_email, $profile_page_pic_url, $csrf_token
 // $profile_update_success, $profile_update_errors (for messages)
+// $show_password_error_popup_from_session (passed from dashboard.php)
 
 // Fetch latest profile details if not already passed or if page is directly loaded
+// These variables are typically already set by teacher_dashboard.php before including this file.
 $current_username = $teacher_username;
 $current_email = $teacher_email;
-$current_profile_pic_path = $profile_page_pic_url; // Already handled by dashboard.php
+$current_profile_pic_path = $profile_page_pic_url;
 
-// Variable to control popup display
-$show_password_error_popup = false;
+// This variable is now directly received from teacher_dashboard.php
+$show_password_error_popup = $show_password_error_popup_from_session ?? false;
 
 // Handle form submission for profile updates
+// IMPORTANT: No header() or exit() calls in this included file's POST handling.
+// All redirects are managed by the parent teacher_dashboard.php.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile_action'])) {
     // CSRF Token Check
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
-        $_SESSION['profile_update_errors'][] = "Invalid CSRF token. Please try again.";
-        header("Location: teacher_dashboard.php?page=profile");
-        exit();
-    }
+        $_SESSION['profile_update_errors'][] = "Security error: Invalid CSRF token. Please try again.";
+        // No redirect here; let the parent script continue.
+    } else {
+        $new_username = htmlspecialchars(trim($_POST['username']));
+        $new_email = htmlspecialchars(trim($_POST['email']));
+        $current_password_input = $_POST['current_password'] ?? '';
+        $new_password = $_POST['new_password'] ?? '';
+        $confirm_new_password = $_POST['confirm_password'] ?? ''; // Corrected form field name
 
-    $new_username = htmlspecialchars(trim($_POST['username']));
-    $new_email = htmlspecialchars(trim($_POST['email']));
-    $current_password_input = $_POST['current_password'] ?? ''; // Get current password input, default to empty
-    $new_password = $_POST['new_password'] ?? ''; // Get new password input, default to empty
-    $confirm_password = $_POST['confirm_password'] ?? ''; // Get confirm password input, default to empty
+        $errors = [];
+        $success_messages = [];
 
-    $errors = [];
+        // --- Input Validations ---
+        if (empty($new_username)) {
+            $errors[] = "Username is required.";
+        }
+        if (empty($new_email)) {
+            $errors[] = "Email is required.";
+        } elseif (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
+            $errors[] = "Invalid email format.";
+        }
 
-    // Basic validation for username and email
-    if (empty($new_username)) {
-        $errors[] = "Username cannot be empty.";
-    }
-    if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = "Invalid email format.";
-    }
+        // Fetch current user data, especially the plaintext password and profile picture path
+        $sql_fetch_user = "SELECT password, profile_pic_path FROM users WHERE id = ?";
+        $stmt_fetch_user = $conn->prepare($sql_fetch_user);
+        $stored_plaintext_password = '';
+        $old_profile_pic_path = '';
 
-    $sql_update_user = "UPDATE users SET username = ?, email = ? WHERE id = ?";
-    $params = [$new_username, $new_email, $teacher_id];
-    $types = "ssi"; // Default types for username and email update
+        if ($stmt_fetch_user) {
+            $stmt_fetch_user->bind_param("i", $teacher_id);
+            $stmt_fetch_user->execute();
+            $result_user = $stmt_fetch_user->get_result();
+            if ($user_data = $result_user->fetch_assoc()) {
+                $stored_plaintext_password = $user_data['password']; // Retrieve plaintext password
+                $old_profile_pic_path = $user_data['profile_pic_path'];
+            }
+            $stmt_fetch_user->close();
+        } else {
+            $errors[] = "Database error fetching user data for update.";
+        }
 
-    // --- Start of Plaintext Password Change Logic ---
-    // Determine if the user intends to change their password
-    $intends_to_change_password = (!empty($current_password_input) || !empty($new_password) || !empty($confirm_password));
+        // --- Password Change Logic (PLAIN TEXT - INSECURE) ---
+        $update_password_sql_part = "";
+        $password_to_save = null;
 
-    if ($intends_to_change_password) {
-        // 1. Fetch the stored (plaintext) password from the database
-        // DANGER: This is INSECURE for production. Passwords should be hashed.
-        $sql_fetch_plaintext_password = "SELECT password FROM users WHERE id = ?";
-        $stmt_fetch_pw = $conn->prepare($sql_fetch_plaintext_password);
-        if ($stmt_fetch_pw) {
-            $stmt_fetch_pw->bind_param("i", $teacher_id);
-            $stmt_fetch_pw->execute();
-            $result_fetch_pw = $stmt_fetch_pw->get_result();
-            $user_data = $result_fetch_pw->fetch_assoc();
-            $stored_plaintext_password = $user_data['password'] ?? ''; // Get stored plaintext password
-            $stmt_fetch_pw->close();
+        $intends_to_change_password = (!empty($current_password_input) || !empty($new_password) || !empty($confirm_new_password));
 
-            // 2. Validate Current Password (plaintext comparison)
-            // DANGER: This is INSECURE for production. Use password_verify().
+        if ($intends_to_change_password) {
+            // 1. Verify Current Password (plaintext comparison)
             if (empty($current_password_input)) {
                 $errors[] = "Please enter your current password to change it.";
             } elseif ($current_password_input !== $stored_plaintext_password) { // Plaintext comparison
                 $errors[] = "Incorrect current password.";
-                $show_password_error_popup = true; // Set flag to show popup
+                $show_password_error_popup = true; // Trigger popup
             }
 
-            // 3. Validate New Password (only if current password was correct or no other errors yet)
-            // Only proceed with new password validation if current password was either correct or not the source of an error yet
-            if (empty($errors) || ($show_password_error_popup && count($errors) == 1)) { // Allows new password validation even if ONLY current password is wrong
+            // 2. Validate New Password (only if current password is correct or no other errors yet)
+            // This condition ensures new password validation only proceeds if current password is correct,
+            // or if the *only* error so far is the current password itself.
+            if ($show_password_error_popup === false || (count($errors) == 1 && in_array("Incorrect current password.", $errors))) {
                 if (empty($new_password)) {
-                    $errors[] = "New password cannot be empty if you intend to change it.";
-                } elseif (strlen($new_password) < 6) { // Minimum password length: 6 characters
+                    $errors[] = "New password cannot be empty if you are changing it.";
+                } elseif (strlen($new_password) < 6) {
                     $errors[] = "New password must be at least 6 characters long.";
-                } elseif ($new_password !== $confirm_password) {
-                    $errors[] = "New password and confirm password do not match.";
+                } elseif ($new_password !== $confirm_new_password) {
+                    $errors[] = "New password and confirm new password do not match.";
                 } else {
-                    // All new password validations passed, use the plaintext new password
-                    // DANGER: Storing plaintext password. For production, use password_hash().
-                    $sql_update_user = "UPDATE users SET username = ?, email = ?, password = ? WHERE id = ?";
-                    $params = [$new_username, $new_email, $new_password, $teacher_id]; // Storing plaintext
-                    $types = "sssi"; // Update types to include password (string)
+                    $password_to_save = $new_password; // ⚠️ STORING PLAIN TEXT PASSWORD
+                    $update_password_sql_part = "password = ?";
                 }
             }
-        } else {
-            $errors[] = "Database error: Could not prepare statement to fetch current password.";
-        }
-    }
-    // --- End of Plaintext Password Change Logic ---
-
-    // Handle profile picture upload (unchanged from previous)
-    if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == UPLOAD_ERR_OK) {
-        $file_name = $_FILES['profile_pic']['name'];
-        $file_tmp = $_FILES['profile_pic']['tmp_name'];
-        $file_size = $_FILES['profile_pic']['size'];
-        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-
-        $allowed_exts = ['jpeg', 'jpg', 'png', 'gif'];
-        if (!in_array($file_ext, $allowed_exts)) {
-            $errors[] = "Only JPG, JPEG, PNG & GIF files are allowed for profile picture.";
-        }
-        if ($file_size > 2097152) { // 2MB
-            $errors[] = "Profile picture size must be less than 2MB.";
         }
 
-        if (empty($errors)) {
-            $upload_dir = 'uploads/profile_pics/';
+        // --- Profile Picture Upload Handling ---
+        $profile_pic_path_to_save_in_db = null;
+        $update_profile_pic_sql_part = "";
+
+        if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == UPLOAD_ERR_OK) {
+            $upload_dir = "uploads/profile_pics/";
             if (!is_dir($upload_dir)) {
                 if (!mkdir($upload_dir, 0755, true)) {
-                    $errors[] = "Failed to create upload directory.";
+                    $errors[] = "Failed to create upload directory. Check server permissions.";
                 }
             }
 
             if (empty($errors)) {
-                $new_file_name = uniqid('profile_', true) . '.' . $file_ext;
-                $upload_path = $upload_dir . $new_file_name;
+                $tmp_name = $_FILES['profile_pic']['tmp_name'];
+                $original_name = basename($_FILES['profile_pic']['name']);
+                $file_extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+                $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif'];
+                $max_file_size = 5 * 1024 * 1024; // 5 MB
 
-                if (move_uploaded_file($file_tmp, $upload_path)) {
-                    $old_profile_pic_sql = "SELECT profile_pic_path FROM users WHERE id = ?";
-                    $stmt_old_pic = $conn->prepare($old_profile_pic_sql);
-                    if ($stmt_old_pic) {
-                        $stmt_old_pic->bind_param("i", $teacher_id);
-                        $stmt_old_pic->execute();
-                        $old_pic_result = $stmt_old_pic->get_result();
-                        if ($old_pic_row = $old_pic_result->fetch_assoc()) {
-                            if (!empty($old_pic_row['profile_pic_path']) && file_exists($old_pic_row['profile_pic_path']) && strpos($old_pic_row['profile_pic_path'], 'placehold.co') === false) {
-                                @unlink($old_pic_row['profile_pic_path']);
-                            }
-                        }
-                        $stmt_old_pic->close();
-                    }
-
-                    $sql_update_user_pic = "UPDATE users SET profile_pic_path = ? WHERE id = ?";
-                    $stmt_update_pic = $conn->prepare($sql_update_user_pic);
-                    if ($stmt_update_pic) {
-                        $stmt_update_pic->bind_param("si", $upload_path, $teacher_id);
-                        if ($stmt_update_pic->execute()) {
-                            $_SESSION['profile_update_success'] = "Profile picture updated successfully!";
-                        } else {
-                            $errors[] = "Failed to update profile picture path in database: " . $stmt_update_pic->error;
-                            if (file_exists($upload_path)) {
-                                @unlink($upload_path);
-                            }
-                        }
-                        $stmt_update_pic->close();
-                    } else {
-                        $errors[] = "Failed to prepare statement for profile picture update.";
-                        if (file_exists($upload_path)) {
-                            @unlink($upload_path);
-                        }
-                    }
+                if (!in_array($file_extension, $allowed_extensions)) {
+                    $errors[] = "Invalid file type. Only JPG, JPEG, PNG, GIF are allowed.";
+                } elseif ($_FILES['profile_pic']['size'] > $max_file_size) {
+                    $errors[] = "Profile picture file is too large (max 5MB).";
                 } else {
-                    $errors[] = "Failed to upload profile picture.";
+                    $new_filename = "user_" . $teacher_id . "_" . uniqid('', true) . "." . $file_extension;
+                    $destination_path = $upload_dir . $new_filename;
+
+                    if (move_uploaded_file($tmp_name, $destination_path)) {
+                        $profile_pic_path_to_save_in_db = $destination_path;
+                        $update_profile_pic_sql_part = "profile_pic_path = ?";
+                        $success_messages[] = "Profile picture updated.";
+                    } else {
+                        $errors[] = "Failed to upload profile picture.";
+                    }
                 }
             }
         }
-    }
 
-    if (!empty($errors)) {
-        $_SESSION['profile_update_errors'] = $errors;
-        // If a popup error occurred, we still want to show the specific message.
-        // The rest of the errors will be displayed by the dashboard's error handling.
-    } else {
-        $_SESSION['profile_update_success'] = (isset($_SESSION['profile_update_success']) ? $_SESSION['profile_update_success'] . " " : "") . "Profile details updated successfully!";
-        $_SESSION['username'] = $new_username; // Update session username if it changed
-    }
+        // If any errors occurred during validation or file upload, store them
+        if (!empty($errors)) {
+            $_SESSION['profile_update_errors'] = array_merge(($_SESSION['profile_update_errors'] ?? []), $errors);
+            $_SESSION['show_password_error_popup'] = $show_password_error_popup;
+            // Clean up potentially uploaded file if there's an error preventing DB save
+            if ($profile_pic_path_to_save_in_db && file_exists($profile_pic_path_to_save_in_db)) {
+                unlink($profile_pic_path_to_save_in_db);
+            }
+            // No redirect here
+        } else {
+            // --- Build SQL Update Statement ---
+            $sql_parts = [];
+            $params = [];
+            $types = "";
 
-    // Set a session flag for the popup if it should be shown
-    if ($show_password_error_popup) {
-        $_SESSION['show_password_error_popup'] = true;
-    }
+            $sql_parts[] = "username = ?";
+            $params[] = $new_username;
+            $types .= "s";
 
-    header("Location: teacher_dashboard.php?page=profile");
-    exit();
+            $sql_parts[] = "email = ?";
+            $params[] = $new_email;
+            $types .= "s";
+
+            if (!empty($update_password_sql_part) && $password_to_save !== null) {
+                $sql_parts[] = $update_password_sql_part;
+                $params[] = $password_to_save;
+                $types .= "s";
+            }
+
+            if (!empty($update_profile_pic_sql_part) && $profile_pic_path_to_save_in_db !== null) {
+                $sql_parts[] = $update_profile_pic_sql_part;
+                $params[] = $profile_pic_path_to_save_in_db;
+                $types .= "s";
+            }
+
+            // If no fields are actually changing based on form input, set a message
+            if (empty($sql_parts)) {
+                $_SESSION['profile_update_success'] = "No changes detected for username, email, or password. Profile picture was also not changed.";
+            } else {
+                $sql = "UPDATE users SET " . implode(", ", $sql_parts) . " WHERE id = ?";
+                $params[] = $teacher_id;
+                $types .= "i";
+
+                $stmt = $conn->prepare($sql);
+
+                if ($stmt) {
+                    $stmt->bind_param($types, ...$params);
+
+                    if ($stmt->execute()) {
+                        $success_messages[] = "Profile details (username/email/password) updated successfully!";
+
+                        // Delete old profile picture only if a new one was successfully saved
+                        if ($profile_pic_path_to_save_in_db && $old_profile_pic_path &&
+                            file_exists($old_profile_pic_path) &&
+                            $old_profile_pic_path !== $profile_pic_path_to_save_in_db &&
+                            strpos($old_profile_pic_path, 'placehold.co') === false // Don't delete placeholder images
+                        ) {
+                            @unlink($old_profile_pic_path);
+                        }
+
+                        // Update session username if it changed
+                        if (isset($_SESSION['username']) && $_SESSION['username'] !== $new_username) {
+                            $_SESSION['username'] = $new_username;
+                        }
+
+                        $_SESSION['profile_update_success'] = implode(" ", $success_messages);
+                    } else {
+                        $errors[] = "Database error during update: " . $stmt->error;
+                        // Clean up potentially uploaded file if DB update failed
+                        if ($profile_pic_path_to_save_in_db && file_exists($profile_pic_path_to_save_in_db)) {
+                            unlink($profile_pic_path_to_save_in_db);
+                        }
+                        $_SESSION['profile_update_errors'] = array_merge(($_SESSION['profile_update_errors'] ?? []), $errors);
+                    }
+                    $stmt->close();
+                } else {
+                    $errors[] = "Database error preparing update statement: " . $conn->error;
+                    // Clean up potentially uploaded file if DB prepare failed
+                    if ($profile_pic_path_to_save_in_db && file_exists($profile_pic_path_to_save_in_db)) {
+                        unlink($profile_pic_path_to_save_in_db);
+                    }
+                    $_SESSION['profile_update_errors'] = array_merge(($_SESSION['profile_update_errors'] ?? []), $errors);
+                }
+            }
+        }
+    } // End of valid CSRF token block
 }
 
+
 // Re-fetch current data after potential update for display
-$sql_current_profile = "SELECT username, email, profile_pic_path FROM users WHERE id = ?"; // No need to fetch password here, handled by POST
+// This ensures the displayed profile details are always current,
+// regardless of whether an update just happened or not.
+$sql_current_profile = "SELECT username, email, profile_pic_path FROM users WHERE id = ?";
 $stmt_current_profile = $conn->prepare($sql_current_profile);
 if ($stmt_current_profile) {
     $stmt_current_profile->bind_param("i", $teacher_id);
@@ -189,6 +235,7 @@ if ($stmt_current_profile) {
             if (!empty($row_current_profile['profile_pic_path']) && file_exists($row_current_profile['profile_pic_path'])) {
                 $current_profile_pic_path = htmlspecialchars($row_current_profile['profile_pic_path']);
             } else {
+                // Fallback to placeholder if path is empty or file doesn't exist
                 $current_profile_pic_path = 'https://placehold.co/120x120/BFDBFE/1E40AF?text=' . strtoupper(substr($current_username, 0, 1));
             }
         }
@@ -196,11 +243,8 @@ if ($stmt_current_profile) {
     $stmt_current_profile->close();
 }
 
-// Check if the popup should be shown on page load
-if (isset($_SESSION['show_password_error_popup']) && $_SESSION['show_password_error_popup']) {
-    $show_password_error_popup = true;
-    unset($_SESSION['show_password_error_popup']); // Clear the flag after reading
-}
+// The $show_password_error_popup is handled by teacher_dashboard.php which passes it in.
+// No need to fetch from session or unset here.
 ?>
 
 <div class="max-w-3xl mx-auto">
@@ -349,9 +393,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     const mainProfileImage = document.getElementById('profileImage');
                     if(mainProfileImage) mainProfileImage.src = e.target.result;
 
-                    const sidebarAvatar = document.getElementById('sidebarAvatar');
-                    const topbarAvatar = document.querySelector('header img[alt="User Avatar"]');
-                    if(sidebarAvatar) sidebarAvatar.src = e.target.result;
+                    // Update topbar avatar if it uses a different ID/class
+                    const topbarAvatar = document.querySelector('header img[alt="user photo"]'); // Targeting top bar avatar by alt
                     if(topbarAvatar) topbarAvatar.src = e.target.result;
                 }
                 reader.readAsDataURL(file);
@@ -401,7 +444,6 @@ document.addEventListener('DOMContentLoaded', function() {
         confirmPasswordError.classList.add('hidden');
 
         // Determine if the user is attempting to change password
-        // This is true if current_password, new_password, or confirm_password fields are non-empty
         const isChangingPassword = currentPassword.length > 0 || newPassword.length > 0 || confirmPassword.length > 0;
 
         if (isChangingPassword) {
@@ -413,7 +455,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // Requirement 2: New password must be entered and meet length if current password or confirm password is provided
-            if (currentPassword.length > 0 || confirmPassword.length > 0) { // Only check if current or confirm fields are used
+            // Only validate if current password field is filled OR new/confirm are filled.
+            if (currentPassword.length > 0 || newPassword.length > 0 || confirmPassword.length > 0) {
                 if (newPassword.length === 0) {
                     newPasswordError.textContent = "New password cannot be empty.";
                     newPasswordError.classList.remove('hidden');
@@ -425,9 +468,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             }
 
-
             // Requirement 3: New password and confirm password must match
-            if (newPassword.length > 0 && newPassword !== confirmPassword) { // Only check if new password is not empty
+            if (newPassword.length > 0 && newPassword !== confirmPassword) {
                 confirmPasswordError.textContent = "New passwords do not match.";
                 confirmPasswordError.classList.remove('hidden');
                 isValid = false;

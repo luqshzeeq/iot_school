@@ -76,7 +76,7 @@
 
 <div class="container mx-auto">
     <div class="mb-8">
-        <h2 class="text-3xl font-semibold text-gray-800 mb-2">Welcome back, <?php echo htmlspecialchars($teacher_username); ?>!</h2>
+        <h2 class="text-3xl font-semibold text-gray-800 mb-2">Welcome back, <?php echo htmlspecialchars($teacher_username); ?>😎</h2>
         
     </div>
 
